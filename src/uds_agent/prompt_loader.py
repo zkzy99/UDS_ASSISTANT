@@ -17,7 +17,7 @@ def load_config(config_path: str = "config.yaml") -> dict:
 
 
 def load_service_prompt(service_id: str, config_path: str = "config.yaml") -> str:
-    """从 config.yaml 的 service_prompts 映射加载提示词文件。"""
+    """从 config.yaml 的 service_prompts 映射加载提示词文件，自动拼接共享 NRC 规则。"""
     cfg = load_config(config_path)
     prompts_map: dict = cfg.get("service_prompts", {})
 
@@ -41,7 +41,16 @@ def load_service_prompt(service_id: str, config_path: str = "config.yaml") -> st
     if not path.exists():
         raise FileNotFoundError(f"提示词文件不存在: {path}")
 
-    return path.read_text(encoding="utf-8")
+    service_prompt = path.read_text(encoding="utf-8")
+
+    # 自动拼接共享 NRC 规则文件
+    base = Path(config_path).parent
+    shared_nrc_path = base / "prompts" / "shared_nrc_rules.md"
+    if shared_nrc_path.exists():
+        shared_nrc = shared_nrc_path.read_text(encoding="utf-8")
+        return shared_nrc + "\n\n---\n\n" + service_prompt
+
+    return service_prompt
 
 
 def load_generation_config(config_path: str = "config.yaml") -> dict:

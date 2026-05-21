@@ -11,6 +11,15 @@
 - **communicationType**: 01=NormalMsg, 02=NetworkMgmt, 03=Both
 - **合法 SF_DL**: 3 字节
 - **关键特性**: 禁用/启用报文发送，需配合 `Check MsgInexist`/`Check MsgExist` 验证
+- **NRC 优先级链（服务级，0x28 专用）**:
+
+| 优先级 | NRC | 触发条件 |
+|--------|-----|---------|
+| 1 | 0x13 | 长度错误（SF_DL≠3） |
+| 2 | 0x12 | 子功能不支持 |
+| 3 | 0x7E | 子功能在当前会话不支持 |
+| 4 | 0x31 | communicationType 不支持 |
+| 5 | 0x22 | 前提条件不满足 |
 
 ### 正响应格式
 
