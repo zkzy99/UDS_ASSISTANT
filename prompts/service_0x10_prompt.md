@@ -251,7 +251,7 @@
 > **注意**：Functional 寻址不是简单的 Physical 1:1 复制。部分类别的数量和行为在 Functional 下不同：
 > - **S3 Timer**：Physical 2 条 vs Functional 2 条
 > - **Incorrect Command**：Physical 2 条 vs Functional 2 条（数量相同但用不同 CAN ID）
-> - **NRC Priority**：只在 Physical 下生成，Functional 不重复
+> - **NRC Priority**：Physical 和 Functional 均生成（Functional 下 NRC 0x12 预期改为 No_Response）
 > - **ECU Reset**：Physical 和 Functional 都生成，但 reset 触发和验证步骤统一用 Physical
 
 ### 软件域规则
@@ -266,9 +266,9 @@
 > **示例**：若输入有 App 域（3 个子功能）和 Boot 域（3 个子功能），且 Physical 和 Functional 都支持，则生成结构为：
 > ```
 > 1. App Physical: 8 类用例
-> 2. App Functional: 8 类用例（去除 NRC Priority）
+> 2. App Functional: 8 类用例（NRC Priority 中 NRC 0x12 预期改为 No_Response）
 > 3. Boot Physical: 8 类用例
-> 4. Boot Functional: 8 类用例（去除 NRC Priority）
+> 4. Boot Functional: 8 类用例（NRC Priority 中 NRC 0x12 预期改为 No_Response）
 > ```
 
 ---
@@ -700,23 +700,28 @@
 
 ### 1.8.1 用例数量规则
 
-- **NRC 优先级链中相邻 NRC 对的数量 / 每个软件域 / 物理寻址**
+- **NRC 优先级链中相邻 NRC 对的数量 / 每个软件域 / 物理寻址 + 功能寻址**
 
-> NRC Priority Test 只用于物理寻址。功能寻址不重复生成。
+> 物理寻址和功能寻址均生成 NRC Priority 用例。
 > 每个相邻 NRC 对生成 1 条用例，验证高优先级 NRC 优先于低优先级 NRC 返回。
+> 功能寻址下 NRC 0x12 被屏蔽，预期为 `Check No_Response`；其他 NRC 正常返回。
 
 例如优先级链 `13>12>7E>22` 有 3 对，生成 3 条：
-- 验证 `13 > 12`：同时触发长度异常 + 不支持子功能
-- 验证 `12 > 7E`：发送不支持的子功能
+- 验证 `13(min Size) > 12`：SF_DL 不满足最小长度 + 不支持子功能
+- 验证 `12 > 13(no min size)`：SF_DL > 2 但子功能不支持
 - 验证 `7E > 22`：在当前会话不支持该子功能时请求
+
+若项目有车速等前置条件限制，额外生成 1 条前置条件验证用例。
 
 ### 1.8.2 用例命名规则
 
-`NRC <NRC_Priority_Chain>`
+**NRC 优先级：**
+`NRC <NRC_Priority_Chain>` — 例如 `NRC 13(min Size)>12`、`NRC 12>13(no min size)`
 
-例如：`NRC 13>12>22`
+**前置条件：**
+`When the preset speed condition is not met, NRC: 0x22 is reported`
 
-其中 `<NRC_Priority_Chain>` 来自输入表的 `Negative response codes` 字段，按优先级排列。
+其中 NRC 优先级链来自输入表的 `Negative response codes` 字段，按优先级排列。
 
 ### 1.8.3 测试步骤模板
 
@@ -724,20 +729,28 @@
 
 以优先级链 `13>12>7E>22` 为例，生成 3 条用例：
 
-**用例 1：验证 `13 > 12`**
+**用例 1：验证 `13(min Size) > 12`**
 1. 进入 Default Session
-2. `Send DiagBy[Physical]Data[10 FE 00];`（不支持的子功能 + 额外字节触发长度异常）
-3. 预期：`Check DiagData[7F 10 13]Within[50]ms;`（0x13 优先于 0x12）
+2. `Send Msg[<ReqCANID>]Data[01 10 <UnsupportedSub>]WithDLC[8];`（SF_DL=1，不满足最小长度 + 不支持子功能）
+3. 预期（物理寻址）：`Check DiagData[7F 10 13]Within[50]ms;`
+4. 预期（功能寻址）：`Check DiagData[7F 10 13]Within[50]ms;`（NRC 0x13 不被屏蔽）
 
-**用例 2：验证 `12 > 7E`**
+**用例 2：验证 `12 > 13(no min size)`**
 1. 进入 Default Session
-2. `Send DiagBy[Physical]Data[10 FE];`（不支持的子功能，长度正确）
-3. 预期：`Check DiagData[7F 10 12]Within[50]ms;`（0x12 优先于 0x7E）
+2. `Send Msg[<ReqCANID>]Data[03 10 <UnsupportedSub>]WithDLC[8];`（SF_DL=3，满足最小长度但子功能不支持）
+3. 预期（物理寻址）：`Check DiagData[7F 10 12]Within[50]ms;`
+4. 预期（功能寻址）：`Check No_Response Within[1000]ms;`（NRC 0x12 被功能寻址屏蔽）
 
 **用例 3：验证 `7E > 22`**
 1. 进入 Default Session（Programming 未解锁，不满足前置条件）
-2. `Send DiagBy[Physical]Data[10 02];`（支持的子功能，但当前会话不支持 + 前置条件不满足）
-3. 预期：`Check DiagData[7F 10 7E]Within[50]ms;`（0x7E 优先于 0x22）
+2. `Send DiagBy[<Addr>]Data[10 02];`（支持的子功能，但当前会话不支持 + 前置条件不满足）
+3. 预期：`Check DiagData[7F 10 7E]Within[50]ms;`
+
+**前置条件验证（车速示例，若项目有此限制）**
+1. 进入 Default Session
+2. `Change MsgID[<SpeedMsg>]Data[<ZeroSpeedData>]CycleTime[100]ms;`
+3. `Send Msg[<ReqCANID>]Data[02 10 <RepSub>]WithDLC[8];`
+4. 预期：`Check DiagData[7F 10 22]Within[50]ms;`
 
 ### 1.8.4 Check 规则
 
@@ -750,6 +763,8 @@
 2. 该测试验证的是 ECU 的 NRC 仲裁逻辑，不是单一条件。
 3. 如果输入表未给出 NRC 优先级链，则跳过本类测试。
 4. 优先级链中有 N 对相邻 NRC，就生成 N 条用例。
+5. **物理寻址和功能寻址均生成 NRC Priority 用例**；功能寻址下 NRC 0x12 预期改为 `No_Response`。
+6. 若项目有车速等前置条件限制，额外生成前置条件 NRC 0x22 验证用例。
 
 ---
 

@@ -51,9 +51,8 @@
 3. Secure Access Test（即使无安全限制也必须生成验证用例）
 4. Reset Effect Test（客户扩展）
 5. Sub-function Traversal Test
-6. Incorrect Diagnostic Command Test
-7. NRC Priority Test（仅 Physical 寻址需要）
-8. Functional Addressing Test（仅当 Functional 不支持时）
+6. Incorrect Diagnostic Command & NRC Priority Test（仅 Physical 寻址生成 NRC Priority 部分）
+7. Functional Addressing Test（仅当 Functional 不支持时）
 
 ### 输出格式要求
 
@@ -137,14 +136,15 @@
 
 #### 用例数量规则
 
-必须覆盖**所有会话 × 所有子功能的 SPRMIB 变体**（含 SPRMIB=N 和全局不支持的子功能）。
+必须覆盖**所有会话 × 支持的子功能的 SPRMIB 变体**。
 
 - 子功能支持 + SPRMIB=Y + 正向成功 → No_Response
 - 子功能支持 + SPRMIB=N → 按原子子功能处理，正常返回响应或 NRC
-- 子功能不支持（全局）→ NRC 0x12
 - 会话不支持该子功能 → NRC 0x7E
 
-**总数 = Session Layer 用例数**（一一对应）
+> **关键规则**：SPRMIB Test **不生成全局不支持的子功能（Support=N）用例**。Session Layer 已覆盖 NRC 0x12 场景，SPRMIB 版本预期相同（仍是 NRC 0x12），属于重复测试。
+
+**总数 = 可达会话数 × 支持的子功能数**（不含全局不支持的）
 
 #### 用例命名规则
 
@@ -165,14 +165,17 @@
 1. 进入 Extended 会话
 2. Send DiagBy[Physical]Data[11 81];
 3. Delay[1000]ms;
-4. Send DiagBy[Physical]Data[22 F1 86];
+4. 验证复位后回到 Default（若支持 F186 用 22 F1 86，否则用 31 服务）
 ```
 
 #### Check 规则
 
 **若原场景正向成功：**
 - 第 2 步：`Check No_Response Within[1000]ms;`
-- 第 4 步：`Check DiagData[62 F1 86 01]Within[50]ms;`（确认复位后回到默认会话）
+- 第 4 步：验证复位后回到默认会话（按优先级选择验证方式）：
+  1. 若支持 DID F186：`Send DiagBy[Physical]Data[22 F1 86];` → `Check DiagData[62 F1 86 01]Within[50]ms;`
+  2. 若不支持 F186：通过 31 服务 — `Send DiagBy[Physical]Data[31 01 02 03];` → `Check DiagData[7F 31 7F]Within[50]ms;`
+  3. 或通过 28 服务 / 27 服务验证
 
 **若原场景负向：**
 - 仍返回负响应，规则同 Session Layer
@@ -181,7 +184,7 @@
 
 #### 特殊规则
 
-1. 正向 SPRMIB 场景必须追加 `22 F1 86` 状态确认，否则无法证明请求生效
+1. 正向 SPRMIB 场景必须追加状态确认（F186 或 31/28/27 服务），否则无法证明请求生效
 2. Delay 步骤不写 check
 3. No_Response 只适用于成功且支持 SPRMIB 的场景
 
@@ -206,7 +209,7 @@
 
 ```
 1. 进入允许安全访问的会话（通常 Extended）
-2. Send DiagBy[Physical]Data[27 <SeedSub>]AndCheckResp[PostiveResponse];
+2. Send DiagBy[Physical]Data[27 <SeedSub>]AndCheckResp[PositiveResponse];
 3. Send Security Right KeyBy[Physical]Level[<KeySub>];
 4. Send DiagBy[Physical]Data[11 <Sub>];
 5. Delay[1000]ms;
@@ -263,30 +266,32 @@
 1. 进入非默认会话（Extended）
 2. Send DiagBy[Physical]Data[11 <Sub>];
 3. Delay[1000]ms;
-4. Send DiagBy[Physical]Data[22 F1 86];
+4. 验证会话回到 Default（见下方验证方式）
 ```
 
 **Check：**
 - 第 2 步：`Check DiagData[51 <Sub>]Within[50]ms;`
-- 第 4 步：`Check DiagData[62 F1 86 01]Within[50]ms;`
+- 第 4 步：验证回到默认会话（按优先级选择）：
+  1. 若支持 DID F186：`Send DiagBy[Physical]Data[22 F1 86];` → `Check DiagData[62 F1 86 01]Within[50]ms;`
+  2. 若不支持 F186：`Send DiagBy[Physical]Data[31 01 02 03];` → `Check DiagData[7F 31 7F]Within[50]ms;`
 
 ##### B. Security Access Reset
 
 **步骤：**
 ```
 1. 进入允许安全访问的会话（Extended）
-2. Send DiagBy[Physical]Data[27 <SeedSub>]AndCheckResp[PostiveResponse];
+2. Send DiagBy[Physical]Data[27 <SeedSub>]AndCheckResp[PositiveResponse];
 3. Send Security Right KeyBy[Physical]Level[<KeySub>];
 4. Send DiagBy[Physical]Data[11 <Sub>];
 5. Delay[1000]ms;
-6. Send DiagBy[Physical]Data[22 F1 86];
+6. 验证会话回到 Default（见下方验证方式）
 7. Send DiagBy[Physical]Data[27 <SeedSub>];
 ```
 
 **Check：**
 - 第 3 步：`Check DiagData[67 <KeySub>]Within[50]ms;`
 - 第 4 步：`Check DiagData[51 <Sub>]Within[50]ms;`
-- 第 6 步：`Check DiagData[62 F1 86 01]Within[50]ms;`
+- 第 6 步：验证回到默认会话（同 A）
 - 第 7 步：`Check DiagData[7F 27 7F]Within[50]ms;`（验证已恢复锁定态）
 
 ##### C. Communication Control State Reset
@@ -299,13 +304,13 @@
 4. Send DiagBy[Physical]Data[11 <Sub>];
 5. Delay[1000]ms;
 6. Check MsgExist[<MonitoredMsgId>];
-7. Send DiagBy[Physical]Data[22 F1 86];
+7. 验证会话回到 Default（同 A）
 ```
 
 **Check：**
 - 第 2 步：`Check DiagData[68 01]Within[50]ms;`
 - 第 4 步：`Check DiagData[51 <Sub>]Within[50]ms;`
-- 第 7 步：`Check DiagData[62 F1 86 01]Within[50]ms;`
+- 第 7 步：验证回到默认会话（同 A）
 - MonitoredMsgId 默认使用 0x21F（可配置）
 
 ##### D. Fault Control State Reset
@@ -351,9 +356,16 @@
 
 #### 测试步骤模板
 
+**物理寻址：**
 ```
 1. 进入 <CurrentSession>
 2. Send SubTraversalBy[Physical]Service[0x11]Excluding[<SupportSubList>]AndCheckResp[<RespCode>];
+```
+
+**功能寻址：**
+```
+1. 进入 <CurrentSession>
+2. Send SubTraversalBy[Function]Service[0x11]Excluding[<SupportSubList>]AndCheckResp[NoResponse];
 ```
 
 其中：
@@ -364,8 +376,10 @@
 
 - 第 1 步：检查进入当前会话的正响应
 - 第 2 步：不单独写 Expected Output（AndCheckResp 已内含检查）
-  - Default 场景：`<RespCode>` 取 `0x7E`
-  - Extended 场景：`<RespCode>` 取 `0x12`
+  - **物理寻址**：
+    - Default 场景：`<RespCode>` 取 `0x7E`
+    - Extended 场景：`<RespCode>` 取 `0x12`
+  - **功能寻址**：`AndCheckResp` 统一取 `NoResponse`（NRC 0x12 在功能寻址下被屏蔽）
 
 #### 特殊规则
 
@@ -374,30 +388,49 @@
 
 ---
 
-### 分类 6: Incorrect Diagnostic Command Test
-
+### 分类 6: Incorrect Diagnostic Command & NRC Priority Test
 
 #### 用例数量规则
 
-**固定 4 条 / 每种支持的寻址方式**
+**DLC 错误用例 + NRC 优先级链验证用例**
+
+**A. DLC 错误（固定 2 条 / 每种支持的寻址方式）：**
 
 | 序号 | 错误类型 | 描述 |
 |------|---------|------|
 | 1 | DLC < 8 | CAN 帧 DLC 不足 8 字节 |
 | 2 | DLC > 8 | CAN 帧 DLC 超过 8 字节 |
-| 3 | SF_DL > 2 | 有效负载长度大于合法值 |
-| 4 | SF_DL < 2 | 有效负载长度小于合法值 |
+
+**B. NRC 优先级验证（NRC 优先级链中相邻 NRC 对的数量 / 物理寻址 + 功能寻址）：**
+
+每个相邻 NRC 对生成 1 条用例。例如链 `13>12>7E>22` 有 3 对，生成 3 条：
+- 验证 `13(min Size) > 12`：SF_DL 不满足最小长度 + 不支持子功能 → 返回 NRC 0x13
+- 验证 `12 > 13(no min size)`：SF_DL > 2 但子功能不支持 → 返回 NRC 0x12
+- 验证 `7E > 22`：在当前会话不支持该子功能时请求 → 返回 NRC 0x7E
+
+> 物理寻址和功能寻址均生成 NRC Priority 用例。功能寻址下 NRC 0x12 被屏蔽，预期为 `Check No_Response`；其他 NRC 正常返回。
+
+**C. 前置条件测试（车速等）：**
+
+若项目存在车速等前置条件限制（从参数表读取），需增加 1 条：
+- 用 `Change MsgID[<SpeedMsg>]Data[<ZeroSpeedData>]CycleTime[<Cycle>]ms;` 设置车速为 0
+- 发送 0x11 请求 → 预期 `Check DiagData[7F 11 22]Within[50]ms;`
 
 #### 用例命名规则
 
+**DLC 错误：**
 1. `When a diagnostic message with DLC < 8 is sent, ECU does not respond`
 2. `When a diagnostic message with DLC > 8 is sent, ECU responds normally`
-3. `Valid SF_DL=2, invalid SF_DL > 2 triggers NRC 0x13`
-4. `Valid SF_DL=2, invalid SF_DL < 2 triggers NRC 0x13`
+
+**NRC 优先级：**
+`NRC <优先级链对>` — 例如 `NRC 13(min Size)>12`、`NRC 12>13(no min size)`
+
+**前置条件：**
+`When the preset speed condition is not met, NRC: 0x22 is reported`
 
 #### 测试步骤模板
 
-**前置步骤（所有 4 条共用）：**
+**前置步骤（所有用例共用）：**
 进入支持 0x11 的当前会话（通常 Extended）
 
 **A. DLC < 8**
@@ -410,19 +443,31 @@ Send Msg[<ReqCANID>]Data[02 11 <RepSub>]WithDLC[7];
 Send Msg[<ReqCANID>]Data[02 11 <RepSub>]WithDLC[9];
 ```
 
-**C. SF_DL > 2**
-```
-Send DiagBy[Physical]Data[11 <RepSub>]WithLen[3];
-```
+**C. NRC 优先级验证（以链 `13>12>7E>22` 为例）**
 
-**D. SF_DL < 2**
-```
-Send DiagBy[Physical]Data[11 <RepSub>]WithLen[1];
-```
+**用例 1：验证 `13(min Size) > 12`**
+1. 进入 Default Session
+2. `Send Msg[<ReqCANID>]Data[01 11 <UnsupportedSub>]WithDLC[8];`（SF_DL=1，不满足最小长度 + 不支持子功能）
+3. 预期（物理寻址）：`Check DiagData[7F 11 13]Within[50]ms;`
+4. 预期（功能寻址）：`Check DiagData[7F 11 13]Within[50]ms;`（NRC 0x13 不被屏蔽）
 
-其中：
-- `<RepSub>` 优先选当前会话下可执行的支持子功能，默认优先 `01`
-- `<ReqCANID>` 物理寻址用 `Diagnostic Req CANID`，功能寻址用 `Diagnostic Functional Req CANID`
+**用例 2：验证 `12 > 13(no min size)`**
+1. 进入 Default Session
+2. `Send Msg[<ReqCANID>]Data[03 11 <UnsupportedSub>]WithDLC[8];`（SF_DL=3，满足最小长度但子功能不支持）
+3. 预期（物理寻址）：`Check DiagData[7F 11 12]Within[50]ms;`
+4. 预期（功能寻址）：`Check No_Response Within[1000]ms;`（NRC 0x12 被功能寻址屏蔽）
+
+**用例 3：验证 `7E > 22`**
+1. 进入不支持该子功能的会话
+2. `Send DiagBy[<Addr>]Data[11 <SupportedSubButNotInSession>];`
+3. 预期：`Check DiagData[7F 11 7E]Within[50]ms;`
+
+**D. 前置条件验证（车速示例）**
+
+1. 进入 Default Session
+2. `Change MsgID[<SpeedMsg>]Data[<ZeroSpeedData>]CycleTime[100]ms;`
+3. `Send Msg[<ReqCANID>]Data[02 11 <RepSub>]WithDLC[8];`
+4. 预期：`Check DiagData[7F 11 22]Within[50]ms;`
 
 #### Check 规则
 
@@ -430,57 +475,27 @@ Send DiagBy[Physical]Data[11 <RepSub>]WithLen[1];
 |---------|----------------|
 | DLC < 8 | `Check No_Response Within[1000]ms;` |
 | DLC > 8 | `Check DiagData[51 <RepSub> [resetTime]]Within[50]ms;` |
-| SF_DL > 2 | `Check DiagData[7F 11 13]Within[50]ms;` |
-| SF_DL < 2 | `Check DiagData[7F 11 13]Within[50]ms;` |
+| NRC 优先级 | 每条用例验证一对相邻 NRC，同时触发两个条件时返回优先级更高的 NRC |
 
 #### 特殊规则
 
 1. 0x11 的合法 SF_DL 为 2 字节数据负载（SID + Subfunction）
 2. DLC 错误测试使用 `Send Msg...WithDLC[...]`
-3. SF_DL 错误测试使用 `Send DiagBy...WithLen[...]`
+3. SF_DL 错误（WithLen）已合并到 NRC Priority 验证中，不再单独生成
+4. NRC 优先级链中有 N 对相邻 NRC，就生成 N 条用例
+5. **物理寻址和功能寻址均生成 NRC Priority 用例**；功能寻址下 NRC 0x12 预期改为 `No_Response`
+6. 若项目有车速等前置条件限制，额外生成前置条件 NRC 0x22 验证用例
 
 ---
 
-### 分类 7: NRC Priority Test
-
-#### 用例数量规则
-
-**仅 Physical 寻址生成，固定 1 条**。
-
-#### 用例命名规则
-
-`NRC <优先级链>`
-
-示例：`NRC 13>12>22`
-
-#### 测试步骤模板
-
-```
-1. 进入支持 0x11 的会话（如 Extended）
-2. Send DiagBy[Physical]Data[11 <RepSub>]WithLen[1];
-3. Delay[2000]ms;
-```
-
-#### Check 规则
-
-- `Check DiagData[7F 11 13]Within[50]ms;`
-- NRC 优先级链从参数表读取（如 `13>12>22`），验证最高优先级 NRC
-
-#### 特殊规则
-
-1. NRC Priority 仅在 Physical 寻址下生成，Functional 不需要
-2. 使用 WithLen 制造长度错误来触发 NRC 0x13
-
----
-
-### 分类 8: Functional Addressing Test（客户扩展）
+### 分类 7: Functional Addressing Test
 
 #### 用例数量规则
 
 **仅当参数表 `Functional Request = 不支持` 时生成，固定 3 条：**
 - 对标准子功能 {01, 02, 03} 各 1 条
 
-若 `Functional Request = 支持`，则不使用本分类，改为像 0x10 一样复制 Session/SPRMIB/Traversal/Incorrect 的 Functional 版本。
+若 `Functional Request = 支持`，则不使用本分类，改为像 0x10 一样复制 Session/SPRMIB/Traversal/Incorrect 的 Functional 版本（见下方"功能寻址用例生成规则"）。
 
 #### 用例命名规则
 
@@ -495,21 +510,20 @@ Send DiagBy[Physical]Data[11 <RepSub>]WithLen[1];
 3. Delay[1000]ms;
 ```
 
-#### Check 规则（客户最新口径）
+#### Check 规则
 
 | 子功能 | Expected Output |
 |--------|----------------|
 | 11 01 | `Check No_Response Within[1000]ms;` |
-| 11 02 | `Check DiagData[7F 11 12]Within[50]ms;` |
+| 11 02 | `Check No_Response Within[1000]ms;` |
 | 11 03 | `Check No_Response Within[1000]ms;` |
 
-> 注意：`11 02` 的 NRC 报文格式必须写成 `7F 11 12`，不能写成 `7F 12 12`。
+> **功能寻址 NRC 0x12 屏蔽规则**：若 ECU 本应返回 NRC 0x12（Subfunction Not Supported），在功能寻址下该 NRC 被屏蔽，ECU 不回复，预期为 `Check No_Response Within[1000]ms;`。
 
 #### 特殊规则
 
-1. 0x11 功能寻址所有产品都不支持（客户规则）
-2. 11 01 和 11 03 无响应，11 02 返回 NRC 0x12
-3. 如果后续业务决定功能寻址一律 No_Response，只需把 3 条统一改成无响应即可
+1. 本分类仅在 `Functional Request = 不支持` 时生成
+2. 功能寻址下所有子功能均预期为 No_Response（NRC 0x12 被屏蔽）
 
 ---
 
@@ -534,8 +548,8 @@ Send DiagBy[Physical]Data[11 <RepSub>]WithLen[1];
 4. 安全访问步骤（0x27 seed/key）仍使用 Physical
 5. 复位后验证步骤仍使用 Physical
 6. **Functional 寻址下正向 0x11 hardReset 预期为 `No_Response`**
-7. **Functional 寻址下不支持的子功能预期为 `No_Response Within[1000]ms;`**（不返回 NRC）
-8. 不生成 NRC Priority Test（仅 Physical）
+7. **功能寻址 NRC 0x12 屏蔽规则**：若 ECU 本应返回 NRC 0x12，在功能寻址下该 NRC 被屏蔽，预期为 `Check No_Response Within[1000]ms;`。其他 NRC（如 0x7E、0x22、0x13）在功能寻址下仍正常返回
+8. 功能寻址也生成 NRC Priority 用例，其中 NRC 0x12 预期改为 `Check No_Response`
 
 当 `Functional Request = 不支持` 时：
 - 仅生成分类 7（Functional Addressing Test）的 3 条锁定行为验证用例
@@ -551,6 +565,8 @@ Send DiagBy[Physical]Data[11 <RepSub>]WithLen[1];
 4. 规则与 App 相同，仅参数来源不同
 5. **Boot 域也必须生成 Functional 用例**（当 Functional=Y 时）
 6. Boot 域安全访问使用对应的 Seed/Key（通常是 27 11/27 12 即 LevelFBL）
+
+> **重要**：Boot 域的会话支持矩阵必须从参数表精确读取，不要假设与 App 域一致。Boot 域可能和 App 域的会话支持矩阵完全不同（例如 Boot Extended 支持 0x11 而 App 不支持，或 Boot 仅支持部分子功能）。所有用例生成必须基于 Boot 域自己的参数，而非套用 App 域的规则。
 
 ---
 
@@ -587,3 +603,7 @@ Send DiagBy[Physical]Data[11 <RepSub>]WithLen[1];
 | Programming（0x02） | `Send DiagBy[Physical]Data[10 01];` → `Delay[1000]ms;` → `Send DiagBy[Physical]Data[10 03];` → `Send DiagBy[Physical]Data[31 01 02 03];` → `Send DiagBy[Physical]Data[10 02];` |
 
 **重要**：进入 Programming 会话前必须先执行 RoutineControl（如 `31 01 02 03`）。
+
+**31 服务（RoutineControl）正响应格式**：
+- 请求 `31 01 02 03` → 正响应 `71 01 02 03 00`（5 字节，最后 1 字节为 routineStatus）
+- **不要遗漏最后的状态字节 `00`**
