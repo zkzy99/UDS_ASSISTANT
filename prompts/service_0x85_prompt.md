@@ -4,8 +4,6 @@
 
 - **Service ID**: 0x85
 - **Service Name**: ControlDTCSetting
-- **正响应 SID**: 0xC5（0x85 + 0x40）
-- **负响应格式**: `7F 85 <NRC>`
 - **子功能**: 01(On/启用 DTC 记录), 02(Off/禁用 DTC 记录)
 - **请求格式**: `85 <Sub> FF FF FF`（DTCRecordMask，通常全 FF）
 - **简化格式**: `85 <Sub>`（部分 ECU 支持，省略 DTCRecordMask 仍返回正响应）
@@ -25,33 +23,6 @@
 ### 正响应格式
 
 - `C5 <Sub>`（仅确认，无额外 payload）
-
-### 典型 NRC
-
-| NRC  | 含义 | 触发条件 |
-|------|------|---------|
-| 0x12 | Subfunction Not Supported | 发送了不支持的子功能（非 01/02） |
-| 0x13 | Incorrect Message Length Or Invalid Format | 报文长度错误 |
-| 0x22 | Conditions Not Correct | 前置条件不满足 |
-| 0x31 | Request Out Of Range | DTCRecordMask 不支持 |
-| 0x7E | Subfunction Not Supported In Active Session | 该子功能在当前会话下不支持 |
-| 0x7F | Service Not Supported In Active Session | 当前会话下不支持 0x85 服务 |
-
----
-
-## 软件域规则
-
-- **必须为 APP 和 Boot 两个软件域各独立生成完整用例集**
-- APP 域：0x85 通常在 Extended 会话支持
-- Boot 域：0x85 通常不支持，所有测试预期 `7F 85 7F`（Physical）或 `No_Response`（Functional）
-- 两个域的用例集之间用 `---` 分隔，Boot 域用例编号接续 APP 域
-
-## 寻址规则
-
-- **Physical 寻址**：生成完整测试集
-- **Functional 寻址**：无论是否支持 Functional Request，均生成完整的功能寻址用例集
-- Functional 寻址用例集中，所有测试步骤使用 `[Function]` 发送，所有预期输出为 `Check No_Response Within[1000]ms;`
-- 功能寻址用例集是物理寻址用例集的完整镜像
 
 ---
 
@@ -379,31 +350,13 @@ Check: `Check DiagData[7F 85 7F]Within[50]ms;`（即使 FBL 解锁，0x85 仍不
 
 ---
 
-## 会话进入标准路径
-
-| 目标会话 | APP 域标准进入步骤 | Boot 域标准进入步骤 |
-|---------|-------------------|-------------------|
-| Default（0x01） | `Send DiagBy[Physical]Data[10 01];` | `Send DiagBy[Physical]Data[10 01];` |
-| Extended（0x03） | `Send DiagBy[Physical]Data[10 03];` | `Send DiagBy[Physical]Data[10 03];` |
-| Programming（0x02） | `10 03 → 31 01 02 03 → 10 02` | `10 03 → 31 01 02 03 → 10 02` |
-
----
-
 ## 生成注意事项
 
-1. **Case ID 不可重复**，物理寻址 `Diag_0x85_Phy_001` 起递增，功能寻址 `Diag_0x85_Fun_001` 起递增
-2. **编号从 001 开始**，顺序为：APP Physical → APP Functional → Boot Physical → Boot Functional
-3. **格式测试（85 01/02 省略 mask）是 Session Layer 的一部分**，不是 Incorrect Command
-4. **85 01（SF_DL=2）不是 SF_DL 错误**，ECU 可能接受省略 DTCRecordMask 的请求
-5. **Boot 域所有 0x85 测试均返回 7F 85 7F**（不支持）
-6. **Boot 域安全等级为 LevelFBL（27 11/27 12）**
-7. **DTC Setting Function Test（完整功能验证）作为可选扩展**，如果参数表提供了 DTC 和故障触发信息
-8. **输出格式严格为 pipe table**，列顺序：`| Case ID | Case名称 | 测试步骤 | 预期输出 |`
-9. **顶级标题使用 `#`**：如 `# 1. Application Service_Physical Addressing`、`# 2. Application Service_Functional Addressing` 等
-10. **分类标题使用 `##`**：如 `## 1.1 Session Layer Test` 等
-11. **各大组之间用 `---` 分隔**
-12. **无符合条件的用例时使用 `>` 引用**
-13. **步骤中换行使用 `<br>` 标记**，不用 `\n`
+1. **格式测试（85 01/02 省略 mask）是 Session Layer 的一部分**，不是 Incorrect Command
+2. **85 01（SF_DL=2）不是 SF_DL 错误**，ECU 可能接受省略 DTCRecordMask 的请求
+3. **Boot 域所有 0x85 测试均返回 7F 85 7F**（不支持）
+4. **Boot 域安全等级为 LevelFBL（27 11/27 12）**
+5. **DTC Setting Function Test（完整功能验证）作为可选扩展**，如果参数表提供了 DTC 和故障触发信息
 
 ---
 

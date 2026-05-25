@@ -4,8 +4,6 @@
 
 - **Service ID**: 0x31
 - **Service Name**: RoutineControl
-- **正响应 SID**: 0x71（0x31 + 0x40）
-- **负响应格式**: `7F 31 <NRC>`
 - **子功能**: 01(StartRoutine), 02(StopRoutine), 03(RequestRoutineResults)
 - **请求格式**: `31 <Sub> <RID_H> <RID_L> [+ Routine Option 数据]`
 - **合法 SF_DL**: 4 + Option 数据长度（最小 4：SID + Sub + RID 2 字节）
@@ -29,19 +27,6 @@
 - StatusByte 解读需从 RID 的 Response 参数定义中读取
   - 如 CheckProgrammingPreCondition: 0x00=正常, 0x01=异常
   - 如 DimmingControl: 0x00=correct, 0x01=incorrect
-
-### 典型 NRC
-
-| NRC  | 含义 | 触发条件 |
-|------|------|---------|
-| 0x12 | Subfunction Not Supported | 发送了不支持的子功能 |
-| 0x13 | Incorrect Message Length Or Invalid Format | 报文长度错误 |
-| 0x22 | Conditions Not Correct | 前置条件不满足（如电压异常） |
-| 0x24 | RequestSequenceError | 序列错误 |
-| 0x31 | Request Out Of Range | RID 不支持或不存在 |
-| 0x33 | Security Access Denied | 需要安全解锁但未解锁 |
-| 0x7E | Subfunction Not Supported In Active Session | 该子功能在当前会话下不支持 |
-| 0x7F | Service Not Supported In Active Session | 当前会话下不支持 0x31 服务 |
 
 ---
 
@@ -298,18 +283,6 @@ Send DiagBy[Physical]Data[31 01 <RID_H>]WithLen[3];
 
 ---
 
-## 会话进入标准路径
-
-为统一生成，进入各会话的标准路径如下：
-
-| 目标会话 | 标准进入步骤 |
-|---------|------------|
-| Default（0x01） | `Send DiagBy[Physical]Data[10 01];` |
-| Extended（0x03） | `Send DiagBy[Physical]Data[10 01];` → `Delay[1000]ms;` → `Send DiagBy[Physical]Data[10 03];` |
-| Programming（0x02） | `Send DiagBy[Physical]Data[10 01];` → `Delay[1000]ms;` → `Send DiagBy[Physical]Data[10 03];` → `Send DiagBy[Physical]Data[10 02];` |
-
----
-
 ## 功能寻址用例生成规则
 
 当 `Functional Request = 支持` 时：
@@ -324,16 +297,8 @@ Send DiagBy[Physical]Data[31 01 <RID_H>]WithLen[3];
 
 ## 生成注意事项
 
-1. **Case ID 不可重复**，物理寻址 `Diag_0x31_Phy_001` 起递增
-2. **每个 Send 都要有对应 Check**
-3. **RID 列表从 Routine Control 表（Sheet 含 "Routine"/"0x31"）读取**
-4. **每个 RID + 每个 Subfunction 组合各一条用例**（除非不支持）
-5. **OptionData 从 RID 的 Request 参数定义读取**，StartRoutine 通常需要
-6. **StatusByte 含义从 RID 的 Response 参数定义读取**
-7. **有前置条件的 RID 必须生成 Condition Test**
-8. **输出格式严格为 pipe table**，列顺序：`| Case ID | Case名称 | 测试步骤 | 预期输出 |`
-9. **顶级标题使用 `#`**：如 `# 1. Application Service_Physical Addressing`、`# 2. Application Service_Functional Addressing` 等
-10. **分类标题使用 `##`**：如 `## 1.1 Session Layer Test` 等
-11. **各大组之间用 `---` 分隔**
-12. **无符合条件的用例时使用 `>` 引用**
-13. **步骤中换行使用 `<br>` 标记**，不用 `\n`
+1. **RID 列表从 Routine Control 表（Sheet 含 "Routine"/"0x31"）读取**
+2. **每个 RID + 每个 Subfunction 组合各一条用例**（除非不支持）
+3. **OptionData 从 RID 的 Request 参数定义读取**，StartRoutine 通常需要
+4. **StatusByte 含义从 RID 的 Response 参数定义读取**
+5. **有前置条件的 RID 必须生成 Condition Test**

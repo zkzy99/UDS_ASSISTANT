@@ -4,24 +4,14 @@
 
 - **Service ID**: 0x27
 - **Service Name**: SecurityAccess
-- **正响应 SID**: 0x67（0x27 + 0x40）
+- **正响应 SID**: 0x67
 - **负响应格式**: `7F 27 <NRC>`
 - **子功能成对**: 奇数=RequestSEED, 偶数=SendKEY
 - **Seed 长度**: 通常 4 字节（从参数表读取）
 - **关键特性**: 复杂的安全机制，包含错误计数器、延时计时器、FAA flag
 - **通常不支持功能寻址**
-- **NRC 优先级链（服务级，Figure 0x27 专用）**:
-
-| 优先级 | NRC | 触发条件 |
-|--------|-----|---------|
-| 1 | 0x13 | 长度错误（SF_DL≠2） |
-| 2 | 0x12 | 子功能不支持（含 SPRMIB 0x83/0x84） |
-| 3 | 0x7E | 子功能在当前会话不支持 |
-| 4 | 0x33 | 安全访问未解锁 |
-| 5 | 0x24 | 序列错误（未请求 seed 直接发 key） |
-| 6 | 0x35 | 密钥错误（InvalidKey） |
-| 7 | 0x36 | 超过最大尝试次数 |
-| 8 | 0x37 | 锁定延时未到期 |
+- **NRC 优先级链**：共享 Figure 6，追加 0x35 > 0x36 > 0x37（InvalidKey > ExceededAttempts > TimeDelay）
+- **完整链**: 0x13 > 0x12 > 0x7E > 0x33 > 0x24 > 0x35 > 0x36 > 0x37
 
 ### 正响应格式
 
@@ -39,18 +29,13 @@
 | L4 | 0x07 | 0x08 | Level 4 |
 | L5 | 0x09 | 0x0A | Level 5 |
 
-### 典型 NRC
+### 典型 NRC — 均在共享 NRC 编码速查表中，此处仅列出 0x27 专有补充
 
 | NRC  | 含义 | 触发条件 |
 |------|------|---------|
-| 0x12 | Subfunction Not Supported | 发送了不支持的子功能（含 SPRMIB 镜像 0x83/0x84） |
-| 0x13 | Incorrect Message Length Or Invalid Format | 报文长度错误 |
-| 0x24 | RequiredTimeDelayNotExpired | 序列错误：未请求 seed 直接发 key |
-| 0x35 | InvalidKey | 密钥错误 |
-| 0x36 | ExceededNumberOfAttempts | 超过最大尝试次数（通常 3 次） |
-| 0x37 | RequiredTimeDelayNotExpired | 锁定延时未到期 |
-| 0x7E | Subfunction Not Supported In Active Session | 该子功能在当前会话下不支持 |
-| 0x7F | Service Not Supported In Active Session | 当前会话下整体不支持 0x27 服务 |
+| 0x35 | InvalidKey | 密钥错误（0x27 专有） |
+| 0x36 | ExceededNumberOfAttempts | 超过最大尝试次数（通常 3 次，0x27 专有） |
+| 0x37 | RequiredTimeDelayNotExpired | 锁定延时未到期（0x27 专有） |
 
 ### 特殊参数
 
@@ -63,14 +48,11 @@
 
 ---
 
-## 软件域规则
+## 软件域规则（共享规则补充）
 
-- **必须为 APP 和 Boot 两个软件域各独立生成完整用例集**
-- APP 域使用 ApplicationServices 表的 0x27 服务行
-- Boot 域使用 BootServices 表的 0x27 服务行
 - Boot 域的安全等级可能与 APP 域完全不同（如 APP 使用 L1/L2，Boot 使用 LevelFBL）
 - Boot 域需要完整镜像 APP 域的 Security Mechanism 测试
-- 两个域的用例集之间用 `---` 分隔，Boot 域用例编号接续 APP 域
+- 其余通用规则（APP/Boot 独立生成、用 `---` 分隔、参数表读取）见共享文件
 
 ## 寻址规则
 
@@ -546,46 +528,25 @@ Boot 域生成与 APP 域类似结构的测试集，但有以下差异：
 
 ## 会话进入标准路径
 
-| 目标会话 | APP 域标准进入步骤 | Boot 域标准进入步骤 |
-|---------|-------------------|-------------------|
-| Default（0x01） | `Send DiagBy[Physical]Data[10 01];` | `Send DiagBy[Physical]Data[10 01];` |
-| Extended（0x03） | `Send DiagBy[Physical]Data[10 03];` | `Send DiagBy[Physical]Data[10 03];` |
-| Programming（0x02） | `10 03 → 31 01 02 03 → 10 02` | `10 03 → 31 01 02 03 → 10 02` |
+见共享文件。0x27 无额外覆盖规则。
 
 ---
 
 ## 输出格式要求
 
-1. **输出格式严格为 pipe table**，列顺序：`| Case ID | Case名称 | 测试步骤 | 预期输出 |`
-2. **步骤中换行使用 `<br>` 标记**，不用 `\n`
-3. **不要生成任何"参数提取结果"或"分析"段落**，直接输出测试用例表格
-4. **每个分类标题使用 `## N.N` 格式**，如 `## 1.1 Session Layer Test`、`## 1.2 Secure Access Process Test`
-5. **各大组之间用 `---` 分隔**
-6. **无符合条件的用例时不生成该分类**
-
-### 输出示例
-
-```markdown
-# 1. Application Service_Physical Addressing
-
-## 1.1 Session Layer Test
-
-| Case ID | Case名称 | 测试步骤 | 预期输出 |
-|---------|---------|---------|---------|
-| Diag_0x27_Phy_001 | Default Session nonsupport 0x27 Service security access level 1 Negativecase-$27 | 1.Send DiagBy[Physical]Data[10 01];<br>2.Send DiagBy[Physical]Data[27 01]AndCheckResp[0x7F]; | 2.Check DiagData[7F 27 7F]Within[50]ms; |
-| Diag_0x27_Phy_002 | Extended Session support 0x27 Service security access level 1 PositiveResponsecase-$27 | 1.Send DiagBy[Physical]Data[10 03];<br>2.Send DiagBy[Physical]Data[27 01]AndCheckResp[PositiveResponse];<br>3.Send Security Right KeyBy[Physical]Level[0x02]; | 2.Check DiagData[67 01 XX XX XX XX]Within[50]ms;<br>3.Check DiagData[67 02]Within[50]ms; |
-```
+见共享文件。额外规则：**每个分类标题使用 `## N.N` 格式**，如 `## 1.1 Session Layer Test`、`## 1.2 Secure Access Process Test`。
 
 ## 生成注意事项
 
-1. **Case ID 不可重复**，物理寻址 `Diag_0x27_Phy_001` 起递增，功能寻址 `Diag_0x27_Fun_001` 起递增
-2. **编号从 001 开始**，顺序为：APP Physical → APP Functional → Boot Physical → Boot Functional
-3. **安全等级映射必须从参数表读取**，不写死
-4. **错误密钥序列**: 35 → 35 → 36 → 37（2 次 InvalidKey 后第 3 次 ExceededAttempts）
-5. **SPRMIB 0x83/0x84 返回 NRC 0x12**
-6. **FAAcounter = 3 后锁定，只有成功 Unlock 或 TimerLocked 超时才能清零**
-7. **Boot 域必须完整镜像 APP 域的 Security Mechanism 测试**
-8. **ECU Reset 包含 Software Reset(11 03)**
+> 通用规则（Case ID 不可重复、pipe table 格式、`<br>` 换行、每 Send 有 Check 等）见共享文件。
+
+1. **编号从 001 开始**，顺序为：APP Physical → APP Functional → Boot Physical → Boot Functional
+2. **安全等级映射必须从参数表读取**，不写死
+3. **错误密钥序列**: 35 → 35 → 36 → 37（2 次 InvalidKey 后第 3 次 ExceededAttempts）
+4. **SPRMIB 0x83/0x84 返回 NRC 0x12**
+5. **FAAcounter = 3 后锁定，只有成功 Unlock 或 TimerLocked 超时才能清零**
+6. **Boot 域必须完整镜像 APP 域的 Security Mechanism 测试**
+7. **ECU Reset 包含 Software Reset(11 03)**
 
 ---
 

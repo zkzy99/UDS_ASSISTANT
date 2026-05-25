@@ -4,8 +4,6 @@
 
 - **Service ID**: 0x28
 - **Service Name**: CommunicationControl
-- **正响应 SID**: 0x68（0x28 + 0x40）
-- **负响应格式**: `7F 28 <NRC>`
 - **请求格式**: `28 <Sub> <communicationType>`
 - **子功能**: 0x00(EnableRxAndTx), 0x01(EnableRxAndDisableTx), 0x02(DisableRxAndEnableTx), 0x03(DisableRxAndTx)
 - **communicationType**: 01=NormalMsg, 02=NetworkMgmt, 03=Both
@@ -24,34 +22,6 @@
 ### 正响应格式
 
 - `68 <Sub>`（仅确认，无额外 payload）
-
-### 典型 NRC
-
-| NRC  | 含义 | 触发条件 |
-|------|------|---------|
-| 0x12 | Subfunction Not Supported | 发送了不支持的子功能 |
-| 0x13 | Incorrect Message Length Or Invalid Format | 报文长度错误（SF_DL ≠ 3） |
-| 0x22 | Conditions Not Correct | 前置条件不满足 |
-| 0x31 | Request Out Of Range | communicationType 不支持 |
-| 0x7E | Subfunction Not Supported In Active Session | 该子功能在当前会话下不支持 |
-| 0x7F | Service Not Supported In Active Session | 当前会话下不支持 0x28 服务 |
-
----
-
-## 软件域规则
-
-- **必须为 APP 和 Boot 两个软件域各独立生成完整用例集**
-- APP 域使用 ApplicationServices 表的 0x28 服务行
-- Boot 域使用 BootServices 表的 0x28 服务行
-- 若 Boot 域不支持 0x28，仍需生成负向用例（Boot 所有测试预期 7F 28 7F）
-- 两个域的用例集之间用 `---` 分隔，Boot 域用例编号接续 APP 域
-
-## 寻址规则
-
-- **Physical 寻址**：生成完整测试集
-- **Functional 寻址**：无论是否支持 Functional Request，均生成完整的功能寻址用例集
-- Functional 寻址用例集中，所有测试步骤使用 `[Function]` 发送，所有预期输出为 `Check No_Response Within[1000]ms;`
-- 功能寻址用例集是物理寻址用例集的完整镜像
 
 ---
 
@@ -504,38 +474,6 @@ Send DiagBy[Physical]Data[28 03 01]WithLen[2];
 - 所有 Functional 发送的测试步骤：`Check No_Response Within[1000]ms;`
 - 安全访问仍使用 Physical：`Check DiagData[67 <KeySub>]Within[50]ms;`
 - MsgInexist/MsgExist 验证仍保留
-
----
-
-## 会话进入标准路径
-
-为统一生成，进入各会话的标准路径如下：
-
-| 目标会话 | 标准进入步骤 |
-|---------|------------|
-| Default（0x01） | `Send DiagBy[Physical]Data[10 01];` |
-| Extended（0x03） | `Send DiagBy[Physical]Data[10 01];` → `Delay[1000]ms;` → `Send DiagBy[Physical]Data[10 03];` |
-| Programming（0x02） | `Send DiagBy[Physical]Data[10 01];` → `Delay[1000]ms;` → `Send DiagBy[Physical]Data[10 03];` → `Send DiagBy[Physical]Data[31 01 02 03];` → `Send DiagBy[Physical]Data[10 02];` |
-
-注意：Programming Session 进入路径使用 `31 01 02 03`（RoutineControl StartRoutine），不是直接 `10 02`。
-
----
-
-## 生成注意事项
-
-1. **Case ID 不可重复**，物理寻址 `Diag_0x28_Phy_001` 起递增，功能寻址 `Diag_0x28_Fun_001` 起递增
-2. **编号从 001 开始**，优先编写所有 Physical 用例，再编写 Functional 用例
-3. **每个 Send 都要有对应 Check**，除以下豁免：
-   - `Delay[...]ms` 不写 Check
-   - 带 `AndCheckResp[...]` 的发送函数不单独写 Check
-4. **禁用后必须验证 MsgInexist**，恢复后必须验证 MsgExist
-5. **被控报文 ID 从参数表读取**（MonitoredMsgId，如 0x1B），不写死
-6. **输出格式严格为 pipe table**，列顺序：`| Case ID | Case名称 | 测试步骤 | 预期输出 |`
-7. **顶级标题使用 `#`**：如 `# 1. Application Service_Physical Addressing`、`# 2. Application Service_Functional Addressing` 等
-8. **分类标题使用 `##`**：如 `## 1.1 Session Layer Test` 等
-9. **各大组之间用 `---` 分隔**
-10. **无符合条件的用例时使用 `>` 引用**
-11. **步骤中换行使用 `<br>` 标记**，不用 `\n`
 
 ---
 

@@ -4,8 +4,6 @@
 
 - **Service ID**: 0x3E
 - **Service Name**: TesterPresent
-- **正响应 SID**: 0x7E（0x3E + 0x40）
-- **负响应格式**: `7F 3E <NRC>`
 - **子功能**: 0x00(ZeroSubFunction)
 - **SPRMIB**: 支持 0x80（0x3E 80 → 无响应）
 - **请求格式**: `3E 00` 或 `3E 80`
@@ -23,29 +21,6 @@
 
 - `7E 00`（仅确认，无额外 payload）
 - SPRMIB 模式（3E 80）：无响应
-
-### 典型 NRC
-
-| NRC  | 含义 | 触发条件 |
-|------|------|---------|
-| 0x12 | Subfunction Not Supported | 发送了 0x3E 不支持的子功能（非 0x00/0x80） |
-| 0x13 | Incorrect Message Length Or Invalid Format | 报文长度错误（SF_DL ≠ 2） |
-
----
-
-## 软件域规则
-
-- **必须为 APP 和 Boot 两个软件域各独立生成完整用例集**
-- APP 域使用 ApplicationServices 表的 0x3E 服务行
-- Boot 域使用 BootServices 表的 0x3E 服务行
-- 两个域的用例集之间用 `---` 分隔，Boot 域用例编号接续 APP 域
-
-## 寻址规则
-
-- **Physical 寻址**：生成完整测试集
-- **Functional 寻址**：无论是否支持 Functional Request，均生成完整的功能寻址用例集
-- Functional 寻址用例集中，所有测试步骤使用 `[Function]` 发送，所有预期输出为 `Check No_Response Within[1000]ms;`
-- 功能寻址用例集是物理寻址用例集的完整镜像
 
 ---
 
@@ -480,32 +455,14 @@ Boot 域按以下顺序生成，每个子分类与 APP 域结构相同：
 
 ---
 
-## 会话进入标准路径
-
-| 目标会话 | APP 域标准进入步骤 | Boot 域标准进入步骤 |
-|---------|-------------------|-------------------|
-| Default（0x01） | `Send DiagBy[Physical]Data[10 01];` | `Send DiagBy[Physical]Data[10 01];` |
-| Extended（0x03） | `Send DiagBy[Physical]Data[10 03];` | `Send DiagBy[Physical]Data[10 03];` |
-| Programming（0x02） | `10 03 → 31 01 02 03 → 10 02` | `10 03 → 31 01 02 03 → 10 02` |
-
----
-
 ## 生成注意事项
 
-1. **Case ID 不可重复**，物理寻址 `Diag_0x3E_Phy_001` 起递增，功能寻址 `Diag_0x3E_Fun_001` 起递增
-2. **编号从 001 开始**，顺序为：APP Physical → APP Functional → Boot Physical → Boot Functional
-3. **0x3E 通常在 Default、Extended 和 Programming 会话下都支持**
-4. **S3 时间从参数表读取**，边界值按 S3±100ms 计算（如 S3=5000ms → 有效 4900ms，无效 5100ms）
-5. **F1 86 DID 用于 APP 域读取当前会话号**：01=Default, 03=Extended
-6. **Boot 域使用 `31 01 FF 01` 验证会话状态**：正响应=71 01 FF 01 00，负响应=7F 31 31
-7. **Boot 域安全等级为 LevelFBL（27 11/27 12）**，不同于 APP 域的 L1（27 01/27 02）
-8. **SPRMIB (3E 80) 无响应但仍刷新 S3**
-9. **输出格式严格为 pipe table**，列顺序：`| Case ID | Case名称 | 测试步骤 | 预期输出 |`
-10. **顶级标题使用 `#`**：如 `# 1. Application Service_Physical Addressing`、`# 2. Application Service_Functional Addressing` 等
-11. **分类标题使用 `##`**：如 `## 1.1 Session Layer Test` 等
-12. **各大组之间用 `---` 分隔**
-13. **无符合条件的用例时使用 `>` 引用**
-14. **步骤中换行使用 `<br>` 标记**，不用 `\n`
+1. **0x3E 通常在 Default、Extended 和 Programming 会话下都支持**
+2. **S3 时间从参数表读取**，边界值按 S3±100ms 计算（如 S3=5000ms → 有效 4900ms，无效 5100ms）
+3. **F1 86 DID 用于 APP 域读取当前会话号**：01=Default, 03=Extended
+4. **Boot 域使用 `31 01 FF 01` 验证会话状态**：正响应=71 01 FF 01 00，负响应=7F 31 31
+5. **Boot 域安全等级为 LevelFBL（27 11/27 12）**，不同于 APP 域的 L1（27 01/27 02）
+6. **SPRMIB (3E 80) 无响应但仍刷新 S3**
 
 ---
 

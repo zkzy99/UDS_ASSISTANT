@@ -4,21 +4,14 @@
 
 - **Service ID**: 0x14
 - **Service Name**: ClearDiagnosticInformation
-- **正响应 SID**: 0x54（0x14 + 0x40）
+- **正响应 SID**: 0x54
 - **负响应格式**: `7F 14 <NRC>`
 - **请求格式**: `14 FF FF FF`（清除所有 DTC 组）
 - **合法 SF_DL**: 4 字节（SID + 3 字节 groupOfDTC）
 - **关键特性**: 清除 DTC 后需用 0x19 验证清除效果；清除前需先确认有 DTC 可清
 - **Functional 寻址特殊规则**: 0x14 服务在 Functional 寻址下**抑制正响应**，所有正向 Functional 用例预期输出均为 `No_Response`
-- **NRC 优先级链（服务级，Figure 0x14 专用）**:
-
-| 优先级 | NRC | 触发条件 |
-|--------|-----|---------|
-| 1 | 0x13 | 长度错误（SF_DL≠4） |
-| 2 | 0x31 | groupOfDTC 不支持 |
-| 3 | 0x22 | 前提条件不满足 |
-| 4 | 0xXX | 厂商/供应商自定义 |
-| 5 | 0x72 | 清除操作写入内存失败 |
+- **NRC 优先级链**：共享 Figure 6，追加 0x72（generalProgrammingFailure，清除操作写入内存失败）
+- **完整链**: 0x13 > 0x31 > 0x22 > 0xXX > 0x72
 
 ### 正响应格式
 
@@ -26,13 +19,7 @@
 
 ### 典型 NRC
 
-| NRC  | 含义 | 触发条件 |
-|------|------|---------|
-| 0x11 | Service Not Supported | Boot 域不支持 0x14 服务 |
-| 0x13 | Incorrect Message Length Or Invalid Format | 报文长度错误（SF_DL ≠ 4） |
-| 0x22 | Conditions Not Correct | 前置条件不满足 |
-| 0x31 | Request Out Of Range | groupOfDTC 值不支持 |
-| 0x7F | Service Not Supported In Active Session | 当前会话下不支持 0x14 服务 |
+均在共享 NRC 编码速查表中。0x14 专有补充：NRC 0x72（清除操作写入内存失败，见优先级链）。
 
 ---
 
@@ -47,13 +34,11 @@
 
 ### 输出格式要求
 
+见共享文件。额外规则：
 1. **顶级标题使用 `#`**：如 `# 1. Application Service_Physical Addressing`、`# 2. Application Service_Functional Addressing`、`# 3. Boot Service_Physical Addressing`、`# 4. Boot Service_Functional Addressing`
 2. **分类标题使用 `##`**：如 `## 1.1 Session Layer Test`、`## 1.2 Secure Access Test`、`## 1.3 Clear DTC Function Test` 等
 3. **各大组之间用 `---` 分隔**
 4. **无符合条件的用例时使用 `>` 引用**：如 `> App 域无符合条件的用例。`
-5. **输出格式严格为 pipe table**，列顺序：`| Case ID | Case名称 | 测试步骤 | 预期输出 |`
-6. **步骤中换行使用 `<br>` 标记**，不用 `\n`
-7. **不要生成任何"参数提取结果"或"分析"段落**，直接输出测试用例表格
 
 ---
 
@@ -302,13 +287,7 @@ Send DiagBy[Physical]Data[14 FF FF FF]WithLen[3];
 
 ## 会话进入标准路径
 
-为统一生成，进入各会话的标准路径如下：
-
-| 目标会话 | 标准进入步骤 |
-|---------|------------|
-| Default（0x01） | `Send DiagBy[Physical]Data[10 01];` |
-| Extended（0x03） | `Send DiagBy[Physical]Data[10 01];` → `Send DiagBy[Physical]Data[10 03];` |
-| Programming（0x02） | `Send DiagBy[Physical]Data[10 01];` → `Send DiagBy[Physical]Data[10 03];` → `Send DiagBy[Physical]Data[31 01 02 03];` → `Send DiagBy[Physical]Data[10 02];` |
+见共享文件。
 
 **会话进入步骤的 Expected Output 规则（重要）：**
 - 会话进入步骤（10 01、10 03、10 02）**不使用 AndCheckResp**，必须在 Expected Output 中显式写出对应的 Check
@@ -353,16 +332,11 @@ Send DiagBy[Physical]Data[14 FF FF FF]WithLen[3];
 
 ## 生成注意事项
 
-1. **Case ID 不可重复**，物理寻址 `Diag_0x14_Phy_001` 起递增，功能寻址 `Diag_0x14_Fun_001` 起递增
-2. **编号从 001 开始**，按 App Phy → App Fun → Boot Phy → Boot Fun 顺序编写
-3. **每个 Send 都要有对应 Check**，除以下豁免：
-   - `Delay[...]ms` 不写 Check
-   - 只有 `27 XX` Seed 请求使用 `AndCheckResp[PositiveResponse]`，其不单独写 Check
-   - 会话进入步骤（10 01、10 03、10 02）和 RoutineControl（31 01 02 03）**必须**在 Expected Output 中写显式 Check
-4. **Expected Output 编号 = Test Procedure 步骤编号**，一一对应
-5. **DTC 验证必须成对出现**：清除前验证存在 + 清除后验证已清除
-6. **故障制造方法从 DTC 表读取**，不同 DTC 的触发条件不同
-7. **不要跳过任何分类**：Secure Access 即使 Level0=Y 也必须生成；Boot 域即使不支持也必须生成 Session Layer 测试
-8. **输出格式**：使用 pipe table `| Case ID | Case名称 | 测试步骤 | 预期输出 |`，多行用 `<br>` 分隔
-9. **不要在会话进入步骤之间添加 Delay**，直接连续发送
-10. **不要在会话进入步骤（10 01、10 03、10 02）使用 AndCheckResp**
+> 通用规则（Case ID 不可重复、pipe table 格式、`<br>` 换行、每 Send 有 Check 等）见共享文件。
+
+1. **编号从 001 开始**，按 App Phy → App Fun → Boot Phy → Boot Fun 顺序编写
+2. **DTC 验证必须成对出现**：清除前验证存在 + 清除后验证已清除
+3. **故障制造方法从 DTC 表读取**，不同 DTC 的触发条件不同
+4. **不要跳过任何分类**：Secure Access 即使 Level0=Y 也必须生成；Boot 域即使不支持也必须生成 Session Layer 测试
+5. **不要在会话进入步骤之间添加 Delay**，直接连续发送
+6. **不要在会话进入步骤（10 01、10 03、10 02）使用 AndCheckResp**

@@ -8,6 +8,9 @@
 | v1.0 | — | 初始版本 |
 | v1.1 | 2026-05-06 | 1) APP不支持会话NRC从0x7F修正为0x31；2) Secure Access即使Level0也必须生成；3) 新增Unsupported DID测试规则；4) Boot功能寻址完整覆盖；5) DID Range/Incorrect Command/NRC Priority多会话覆盖 |
 | v1.2 | 2026-05-06 | 基于奇瑞/华智/蔚来/恒润四方对比优化：1) 新增核心原则宁滥勿缺+精准度；2) Functional=Y时完整镜像；3) 新增CAN DLC测试；4) Delay可选；5) Fun连续编号；6) 混合寻址安全访问；7) 数据填充优先用精确值 |
+| v1.3 | 2026-05-22 | 强化输出纪律：禁止分析推理段落、禁止重复表头、禁止省略号、每条用例必须完整 |
+| v1.4 | 2026-05-22 | 对标参考文件精简：1) 去掉不支持会话负向用例；2) 去掉Unsupported DID测试；3) Secure Access仅为需安全等级DID生成；4) Boot域简化为代表性DID |
+| v1.5 | 2026-05-22 | 对标 shared_nrc_rules.md 精简：移除输出纪律、典型NRC表、软件域规则、会话进入路径、生成注意事项等已共享的重复内容 |
 -->
 
 ## 核心原则
@@ -19,13 +22,11 @@
 
 - **Service ID**: 0x22
 - **Service Name**: ReadDataByIdentifier
-- **正响应 SID**: 0x62（0x22 + 0x40）
-- **负响应格式**: `7F 22 <NRC>`
 - **请求格式**: `22 <DID_H> <DID_L>`
 - **无 Subfunction**（DID 替代子功能角色）
 - **合法 SF_DL**: 3 字节（SID + DID 2 字节）
 - **关键特性**: 不存在 NRC 0x12（因为没有子功能概念）；NRC 0x31 用于不支持的 DID
-- **NRC 优先级链（服务级，Figure 0x22 专用）**:
+- **NRC 优先级链（服务级，0x22 专用）**:
 
 | 优先级 | NRC | 触发条件 |
 |--------|-----|---------|
@@ -43,31 +44,13 @@
 - 数据长度 = DID 的 Byte Length（从 DID 表读取）
 - 数据内容使用 DefaultValue（如参数表有定义）或 xx 占位
 
-### 典型 NRC
-
-| NRC  | 含义 | 触发条件 |
-|------|------|---------|
-| 0x13 | Incorrect Message Length Or Invalid Format | 报文长度错误（SF_DL ≠ 3） |
-| 0x31 | Request Out Of Range | DID 不支持或不在有效范围 |
-| 0x33 | Security Access Denied | 需要安全解锁但未解锁 |
-| 0x7F | Service Not Supported In Active Session | 当前会话下不支持 0x22 服务 |
-
 ---
-
-## 软件域规则
-
-- **必须为 APP 和 Boot 两个软件域各独立生成完整用例集**
-- APP 域使用 ApplicationServices 表的 0x22 服务行和 DID-Session 支持矩阵
-- Boot 域使用 BootServices 表的 0x22 服务行和 DID-Session 支持矩阵
-- Boot 域的 DID 可读范围与会话支持可能与 APP 域完全不同，必须从 Boot 表重新读取
-- 两个域的用例集之间用 `---` 分隔，Boot 域用例编号接续 APP 域
 
 ## 寻址规则
 
 - **Physical 寻址**：生成完整测试集
 - **Functional 寻址**：即使 Functional Request = N，仍需生成功能寻址用例集（全部预期 No_Response）
 - 当 Functional Request = Y 时，功能寻址用例必须是物理寻址的完整镜像（每个 DID × 每个会话全部覆盖）
-- Functional 用例 ID 编号连续接续 Physical，不从 001 重新开始
 
 ---
 
@@ -81,49 +64,33 @@
 #### 用例数量规则
 
 - **正向用例**: `Npos` = 可读 DID × 支持的会话数（每个可读 DID 在每个支持的会话下各 1 条）
-- **负向用例（不支持会话）**: `Nneg_sess` = 每个可读 DID × 每个不支持的会话各 1 条
-  - 即：即使某个会话不支持 0x22 服务，也必须对每个可读 DID 单独生成一条 NRC 用例
-  - 示例：若 Programming 会话不支持，15 个 DID 各生成 1 条 → 15 条 NRC 用例
-- **总数 = Npos + Nneg_sess**
+- **总数 = Npos**（仅正向用例，不生成不支持会话的负向用例）
 
 #### 生成顺序
 
 按会话分组，每组内按 DID 排序：
 1. Default Session 正向（每个可读 DID 1 条）
 2. Extended Session 正向（每个可读 DID 1 条）
-3. Programming Session 负向（每个可读 DID 1 条 NRC）
 
 #### 用例命名规则
 
-- 正向：`<CurrentSessionName> Session support the 0x22 service read DID 0x<DID>`
-  - 示例：`Default Session support the 0x22 service read DID 0xF186`
-- 负向（会话不支持）：`<CurrentSessionName> Session nonsupport 0x22 service read DID 0x<DID>`
-  - 示例：`Programming Session nonsupport 0x22 service read DID 0xF180`
+- 正向：`<CurrentSessionName> Session supports reading DID: 0x<DID> PositiveCase-$22`
+  - 示例：`Default Session supports reading DID: 0xF197 PositiveCase-$22`
 
 #### 测试步骤模板
 
-**A. 支持会话正向（可读 DID）**
+**支持会话正向（可读 DID）**
 ```
 1. 进入目标会话（按标准路径）
 2. Send DiagBy[Physical]Data[22 <DID_H> <DID_L>];
 ```
 
-**B. 不支持的会话（每个 DID 独立一条）**
-```
-1. 进入不支持的会话（如 Programming）
-2. Send DiagBy[Physical]Data[22 <DID_H> <DID_L>];
-```
-
 #### Check 规则
 
-**A. 支持会话正向：**
+**支持会话正向：**
 - `Check DiagData[62 <DID_H> <DID_L> <DataContent>]Within[50]ms;`
 - DataContent 长度 = DID 的 Byte Length
 - 固定值用实际值（如 F186=当前会话号 01/02/03），可变值用 xx
-
-**B. 不支持的会话（每个 DID 独立一条）：**
-- `Check DiagData[7F 22 31]Within[50]ms;`
-- **注意**：即使服务级表中该会话标记为 N（不支持 0x22 服务），负向用例也必须返回 NRC 0x31（conditionsNotCorrect），而不是 0x7F（serviceNotSupportedInActiveSession）。原因是 0x22 的会话不支持在 DID 级别判断，属于条件不满足而非服务本身不支持。
 
 #### 特殊规则
 
@@ -132,29 +99,16 @@
 3. 若 DID 支持 Read 但未定义 Default 值，用 xx 占位
 4. 特殊 DID 示例：DID 0xF186（Active Diagnostic Session），1 字节，值=当前会话号（01/02/03）
 5. DID 列表从 DID 表（Sheet 含 "DID" 或 "0x22"/"0x2E"）读取，包括 Basic DIDs 和 RDBI DIDs
-6. **Programming Session 必须对每个可读 DID 都生成负向用例**，不是只选 1 个代表性 DID
-7. **APP 不支持会话的 NRC 统一为 0x31**，不可使用 0x7F
-
-#### Unsupported DID 测试（APP 域）
-
-除可读 DID 外，还需从 DID 表提取 **ECU 支持 = N** 的 DID 列表（即标准中定义了该 DID，但当前 ECU 不支持）。
-
-- 在 Default Session 下，对每个 unsupported DID 生成 1 条读取用例
-- 预期响应：`Check DiagData[7F 22 31]Within[50]ms;`
-- 用例命名：`Default Session unsupported DID 0x<DID> returns NRC 0x31`
-- 这些用例排在正向用例之后、不支持会话负向用例之前
-- **总数 = unsupported DID 数量**
 
 ---
 
 ### 分类 2: Secure Access Test
 #### 用例数量规则
 
-- **即使所有 DID 的 Read Access Level 均为 Level0（无安全限制），也必须生成 Secure Access 测试用例**
-- 用例目的：验证安全解锁流程后，DID 读取行为仍然正确
-- **APP 域**：在 Extended Session 中执行 Seed/Key 解锁，然后读取所有可读 DID → **总数 = APP 可读 DID 数**
-- **Boot 域**：在 Programming Session 中执行 Boot 级 Seed/Key 解锁，然后读取所有 Boot 可读 DID → **总数 = Boot 可读 DID 数**
-- 若有 DID 的 Read Access Level 包含安全限制（如 Locked/L2 等），也按同一模板生成
+- **仅为 Read Access Level 不为 Level0 的 DID 生成安全访问用例**
+- Read Access Level 为 Level0（无安全限制）的 DID 不需要生成安全访问用例
+- **APP 域**：在 Extended Session 中执行 Seed/Key 解锁，然后读取需安全等级的 DID → **总数 = APP 需安全等级的 DID 数**
+- **Boot 域（简化）**：在 Programming Session 中执行 Boot 级 Seed/Key 解锁，然后读取 3-5 个代表性 Boot DID（不需要为每个 Boot DID 都生成）→ **总数 = 3~5 条**
 
 #### 用例命名规则
 
@@ -191,37 +145,35 @@
 1. 安全等级从 DID 表的 Read Access Level 字段读取，不写死
 2. APP 域 SeedSub/KeySub：从 ApplicationServices 的安全等级表获取（如 L1 → 27 01/27 02，L2 → 27 03/27 04）
 3. Boot 域 SeedSub/KeySub：从 BootServices 的安全等级表获取（如 L11 → 27 11/27 12，与 APP 域可能不同）
-4. **Level0 DID 也必须生成安全访问用例**，验证安全解锁不会破坏正常读取
+4. **Read Access Level 为 Level0 的 DID 不生成安全访问用例**
+5. Boot 域简化：选取 3-5 个代表性 DID（如 System DID 中选 2-3 个 + ECU DID 中选 1-2 个）
 
 ---
 
-### 分类 3: Boot Session Layer Test
+### 分类 3: Boot Session Layer Test（简化）
 
 #### 用例数量规则
 
-- **与分类 1 结构完全相同**，但使用 Boot 域的 DID-Session 支持矩阵
-- `Npos_boot` = Boot 可读 DID × Boot 支持的会话数
-- `Nneg_boot` = Boot 不可读 DID × 对应会话的 NRC 用例
+- Boot 域**简化生成**，选取 5-8 个代表性 DID（覆盖不同类型：System DID、版本号 DID、供应商 DID 等）
+- `Npos_boot` = 代表性 DID × Boot 支持的会话数
+- **不生成** APP-only DID 的负向用例和 unsupported DID 测试
 - Boot 域的标准进入路径：`Default → Extended → Programming → Default(Boot)`
 
 #### 生成顺序
 
 按 Boot 会话分组：
-1. Boot Default Session 正向（每个 Boot 可读 DID 1 条）
-2. Boot Programming Session 正向（每个 Boot 可读 DID 1 条）
+1. Boot Default Session 正向（每个代表性 DID 1 条）
+2. Boot Programming Session 正向（每个代表性 DID 1 条）
 3. Boot Extended Session（如支持）正向
-4. Boot 各会话负向（DID 在该 Boot 会话下不可读 → NRC 0x31）
 
 #### 用例命名规则
 
-- 正向：`Boot <SessionName> Session support the 0x22 service read DID 0x<DID>`
-  - 示例：`Boot Programming Session support the 0x22 service read DID 0xF180`
-- 负向：`Boot <SessionName> Session nonsupport read DID 0x<DID> (APP only DID)`
-  - 示例：`Boot Programming Session nonsupport read DID 0xF189 (APP only DID)`
+- 正向：`Boot <SessionName> Session supports reading DID: 0x<DID> PositiveCase-$22`
+  - 示例：`Boot Programming Session supports reading DID: 0xF180 PositiveCase-$22`
 
 #### 测试步骤模板
 
-**A. Boot 正向（可读 DID）**
+**Boot 正向（代表性 DID）**
 ```
 1. Send DiagBy[Physical]Data[10 01]
 2. Delay[1000]ms;
@@ -231,35 +183,23 @@
 6. Send DiagBy[Physical]Data[22 <DID_H> <DID_L>];
 ```
 
-**B. Boot 负向（不可读 DID）**
-- 同上步骤，但预期 `Check DiagData[7F 22 31]Within[50]ms;`
-
 #### Check 规则
 
 - Boot 正向：`Check DiagData[62 <DID_H> <DID_L> <DataContent>]Within[50]ms;`
-- Boot 负向：`Check DiagData[7F 22 31]Within[50]ms;`
 
 #### 特殊规则
 
-1. Boot 域的 DID 列表必须从 BootServices 表重新读取，不能复用 APP 域的列表
-2. 某些 DID 仅在 APP 域可读（Boot 列表中标记为 N），这些 DID 在 Boot 会话下必须生成 NRC 0x31 负向用例
+1. Boot 域的 DID 列表从 BootServices 表读取，但只选取 5-8 个代表性 DID
+2. 代表性 DID 选择原则：覆盖 System DID（如 F197、F189、F180）+ 供应商 DID（如 F18A）+ 其他类型
 3. Boot 域支持的会话可能包含 Programming Session（与 APP 域不同）
-
-#### Unsupported DID 测试（Boot 域）
-
-与 APP 域类似，Boot 域也需测试 unsupported DID：
-- 在 Boot Default Session 下，对每个 Boot 域 unsupported DID 生成 1 条读取用例
-- 预期响应：`Check DiagData[7F 22 31]Within[50]ms;`
-- 用例命名：`Boot Default Session unsupported DID 0x<DID> returns NRC 0x31`
-- 这些用例排在 Boot 正向用例之后、APP-only DID 负向用例之前
 
 ---
 
 ### 分类 4: DID Range Test
 #### 用例数量规则
 
-- **APP 域**：每个支持 0x22 的会话各 1 条 → 通常 Default + Extended = **2 条**（Programming 如支持也加 1 条）
-- **Boot 域**：每个 Boot 支持 0x22 的会话各 1 条 → 通常 Default + Programming + Extended = **3 条**
+- **APP 域**：每个支持 0x22 的会话各 1 条 → 通常 Default + Extended = **2 条**
+- **Boot 域（简化）**：仅 Default Session 1 条 → **1 条**
 
 #### 用例命名规则
 
@@ -279,7 +219,7 @@
 其中：
 - `<AllSupportedDIDList>` = 所有 Support=Y 的 DID（含 Basic DIDs 和 RDBI DIDs）
   - 示例：`F1 86 F1 87 F1 88 F1 89 F1 90 F1 91 F1 92 F1 93 ...`
-- Boot 版本的 Excluding 列表使用 Boot 域的 DID 列表
+- Boot 版本的 Excluding 列表使用 Boot 域的 DID 列表（仅生成 Default Session 1 条）
 
 #### Check 规则
 
@@ -298,7 +238,7 @@
 #### 用例数量规则
 
 - **APP 域**：每个支持 0x22 的会话各 2 条（SF_DL > 3 + SF_DL < 3）→ 通常 Default + Extended = **4 条**
-- **Boot 域**：每个 Boot 支持 0x22 的会话各 2 条 → 通常 Default + Programming + Extended = **6 条**
+- **Boot 域（简化）**：仅 Default Session 2 条 → **2 条**
 
 | 序号 | 错误类型 | 描述 |
 |------|---------|------|
@@ -328,7 +268,7 @@ Send DiagBy[Physical]Data[22 F1 86]WithLen[4];
 Send DiagBy[Physical]Data[22 F1]WithLen[2];
 ```
 
-APP 域在 Default 和 Extended 会话下分别生成；Boot 域在 Default、Programming、Extended 会话下分别生成。Boot 域的进入路径使用 Boot 标准路径。
+APP 域在 Default 和 Extended 会话下分别生成；Boot 域仅在 Default Session 下生成。Boot 域的进入路径使用 Boot 标准路径。
 
 #### Check 规则
 
@@ -364,7 +304,7 @@ APP 域在 Default 和 Extended 会话下分别生成；Boot 域在 Default、Pr
 #### 用例数量规则
 
 - **APP 域**：每个支持 0x22 的会话各 1 条 → 通常 Default + Extended = **2 条**
-- **Boot 域**：每个 Boot 支持 0x22 的会话各 1 条 → 通常 Default + Programming + Extended = **3 条**
+- **Boot 域（简化）**：仅 Default Session 1 条 → **1 条**
 
 #### 用例命名规则
 
@@ -391,24 +331,7 @@ APP 域在 Default 和 Extended 会话下分别生成；Boot 域在 Default、Pr
 
 1. NRC 0x13（消息长度错误）的优先级高于 NRC 0x31（DID 不支持）等
 2. 此用例验证 ECU 正确的 NRC 优先级处理
-3. APP 和 Boot 域分别在各支持会话下生成
-
----
-
-## 会话进入标准路径
-
-为统一生成，进入各会话的标准路径如下：
-
-| 目标会话 | 标准进入步骤 |
-|---------|------------|
-| Default（0x01） | `Send DiagBy[Physical]Data[10 01];` |
-| Extended（0x03） | `Send DiagBy[Physical]Data[10 03];`（直接进入，无需先经 Default） |
-| Programming（0x02） | `Send DiagBy[Physical]Data[10 01];` → `Send DiagBy[Physical]Data[10 03];` → `Send DiagBy[Physical]Data[10 02];` |
-
-**注意**：
-- 会话切换之间**不使用 Delay**，除非参数表或特定测试场景明确要求
-- 如果从 Default 进入 Extended，直接 `10 03` 即可，无需先 `10 01` 再 `10 03`
-- Boot 域进入路径：先进入 Programming Session 触发 Boot 模式，再切换到目标 Boot 会话
+3. APP 域在各支持会话下生成；Boot 域仅在 Default Session 下生成
 
 ---
 
@@ -427,12 +350,10 @@ APP 域在 Default 和 Extended 会话下分别生成；Boot 域在 Default、Pr
   1. **代表性 DID 读取**（Default 会话，选取 2-3 个代表性 DID）：预期全部 No_Response
   2. **DID Range 遍历**（1 条）：`DIDTraversalBy[Function]` → 全部 No_Response
   3. **Incorrect Command**（1-2 条）：SF_DL 错误 → 全部 No_Response
-- **Boot 域功能寻址**（必须生成完整覆盖）：
-  1. **所有 Boot DID 读取**：每个 Boot 可读 DID × 每个 Boot 支持会话（Default/Programming/Extended）各 1 条，预期全部 No_Response
-  2. **DID Range 遍历**（1 条）：`DIDTraversalBy[Function]` → 全部 No_Response
-  3. **Incorrect Command**（2 条）：SF_DL > 3 和 SF_DL < 3 → 全部 No_Response
+- **Boot 域功能寻址（简化）**：
+  1. **代表性 DID 读取**（Default 会话，选取 2-3 个代表性 Boot DID）：预期全部 No_Response
+  2. **Incorrect Command**（1-2 条）：SF_DL 错误 → 全部 No_Response
 - 所有 Functional 用例预期输出均为 `Check No_Response Within[1000]ms;`
-- APP 域不需要对每个 DID × 每个会话生成完整矩阵，Boot 域需要
 
 ---
 
@@ -458,33 +379,14 @@ APP 域在 Default 和 Extended 会话下分别生成；Boot 域在 Default、Pr
 
 ---
 
-## 生成注意事项
-
-1. **顶级标题使用 `#`**：如 `# 1. Application Service_Physical Addressing`、`# 2. Application Service_Functional Addressing`、`# 3. Boot Service_Physical Addressing`、`# 4. Boot Service_Functional Addressing`
-2. **分类标题使用 `##`**：如 `## 1.1 Session Layer Test`、`## 1.2 Secure Access Test` 等
-3. **各大组之间用 `---` 分隔**
-4. **无符合条件的用例时使用 `>` 引用**：如 `> 无符合条件的用例。`
-5. **Case ID 不可重复**，物理寻址 `Diag_0x22_Phy_001` 起递增，功能寻址 `Diag_0x22_Fun_001` 起递增
-2. **编号从 001 开始**，优先编写所有 Physical 用例，再编写 Functional 用例，Functional 编号连续接续 Physical（不从 001 重启）
-3. **每个 Send 都要有对应 Check**，除以下豁免：
-   - `Delay[...]ms` 不写 Check
-   - 带 `AndCheckResp[...]` 的发送函数不单独写 Check
-4. **DID 列表从 DID 表读取**，包括 Basic DIDs 和 RDBI DIDs 两个 Sheet
-5. **0x22 无子功能概念**，不存在 NRC 0x12，不支持的 DID 返回 NRC 0x31
-6. **输出格式严格为 pipe table**，列顺序：`| Case ID | Case名称 | 测试步骤 | 预期输出 |`
-7. **步骤中换行使用 `<br>` 标记**，不用 `\n`
-8. **不要生成任何"参数提取结果"或"分析"段落**，直接输出测试用例表格
-
----
-
 ## 分类汇总
 
 | 分类 | 描述 | 用例数量公式 |
 |------|------|-------------|
-| 1. Session Layer (APP) | 可读 DID × 支持会话 + 每个可读 DID × 不支持会话 + unsupported DID | `|DIDs| × |支持会话| + |DIDs| × |不支持会话| + |unsupported DIDs|` |
-| 2. Security Access (APP+Boot) | APP 可读 DID + Boot 可读 DID（含 Level0） | `|APP DIDs| + |Boot DIDs|` |
-| 3. Boot Session Layer | Boot 可读 DID × Boot 支持会话 + 不可读 NRC + unsupported DID | `|Boot DIDs| × |Boot支持会话| + |Boot不可读DIDs| + |Boot unsupported DIDs|` |
-| 4. DID Range | APP 每支持会话 1 条 + Boot 每支持会话 1 条 | `|APP支持会话| + |Boot支持会话|` |
-| 5. Incorrect Command | APP 每支持会话 2 条 + Boot 每支持会话 2 条 | `|APP支持会话| × 2 + |Boot支持会话| × 2` |
-| 6. NRC Priority | APP 每支持会话 1 条 + Boot 每支持会话 1 条 | `|APP支持会话| + |Boot支持会话|` |
-| 7. Functional Addressing | APP 代表性 DID + DID Range + Incorrect Command + Boot 完整覆盖 | ~5-9 条 (APP) + `\|Boot DIDs\| × \|Boot支持会话\| + 3` (Boot) |
+| 1. Session Layer (APP) | 可读 DID × 支持会话（仅正向） | `\|DIDs\| × \|支持会话\|` |
+| 2. Security Access (APP+Boot) | APP 需安全等级 DID + Boot 代表性 DID（3-5条） | `\|需安全DID\| + 3~5` |
+| 3. Boot Session Layer (简化) | 代表性 DID × Boot 支持会话（仅正向） | `5~8 × \|Boot支持会话\|` |
+| 4. DID Range | APP 每支持会话 1 条 + Boot 1 条 | `\|APP支持会话\| + 1` |
+| 5. Incorrect Command | APP 每支持会话 2 条 + Boot 2 条 | `\|APP支持会话\| × 2 + 2` |
+| 6. NRC Priority | APP 每支持会话 1 条 + Boot 1 条 | `\|APP支持会话\| + 1` |
+| 7. Functional Addressing | 完整镜像（Physical 所有用例） | Physical 用例总数的 1 倍 |

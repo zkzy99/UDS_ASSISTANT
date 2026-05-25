@@ -84,6 +84,15 @@ def build_generation_user_message(
 
     parts.append(f"\n请根据以上参数和系统提示词中的规则，生成服务 {sid} 的完整测试用例。")
 
+    # 大用例量服务（0x22/0x2E）额外强调输出纪律
+    if sid_num in ("22", "2e"):
+        parts.append("""
+## 输出纪律提醒
+- 直接输出 pipe table 格式的测试用例，禁止任何分析、推理、参数提取段落
+- 每条用例必须完整，禁止用 ... 省略
+- 每个分类只输出一次表头，连续输出所有数据行，不要中断重写
+""")
+
     parts.append(f"\n## Excel 原始文本\n\n{excel_text}")
 
     return "\n".join(parts)

@@ -75,10 +75,7 @@
 
 ## 0.2.1 输出格式要求
 
-1. **输出格式严格为 pipe table**，列顺序：`| Case ID | Case名称 | 测试步骤 | 预期输出 |`
-2. **步骤中换行使用 `<br>` 标记**，不用 `\n`
-3. **不要生成任何"参数提取结果"或"分析"段落**，直接输出测试用例表格
-4. **NRC 优先级链从参数表精确读取**，不要猜测
+输出格式遵循共享定义。NRC 优先级链从参数表精确读取，不要猜测。
 
 ## 0.2.2 Timing 参数提取规则
 
@@ -127,19 +124,14 @@
 
 ### 0.2.3 测试步骤与预期输出的编写原则
 
-1. **每一个发送动作原则上都要有对应 check（Expected Output）。**
-2. **以下两类步骤不单独写 Expected Output：**
-   - `Delay[...]ms`
-   - 已带 `AndCheckResp[...]` 的发送函数
-3. **以下检查型步骤本身就是检查动作，不再在 Expected Output 中重复：**
-   - `Check MsgInexist[...]`
-   - `Check MsgExist[...]`
-4. `Check DiagData[...]Within[50]ms` 为默认诊断响应检查写法。
-5. `Check No_Response Within[1000]ms` 为默认“无响应”检查写法；若业务明确指定更长时间，按客户规则覆盖。
-6. 0x10 正响应格式：
+Send/Check 对应关系遵循共享输出格式规则。0x10 特有补充：
+
+1. `Check DiagData[...]Within[50]ms` 为默认诊断响应检查写法。
+2. `Check No_Response Within[1000]ms` 为默认”无响应”检查写法；若业务明确指定更长时间，按客户规则覆盖。
+3. 0x10 正响应格式：
    - `50 <Subfunction> <P2ServerMax_H> <P2ServerMax_L> <P2*ServerMax_H> <P2*ServerMax_L>`
    - `50 serviceID 0x10 + 0x40`
-7. 0x11 正响应格式：
+4. 0x11 正响应格式（仅用于 1.4 ECU Reset Test）：
    - 若 `reset_time Support = N`：`51 <Subfunction>`
    - 若 `reset_time Support = Y`：`51 <Subfunction> <ResetTime_H> <ResetTime_L>`
    - `51 serviceID 0x11 + 0x40`
@@ -148,68 +140,11 @@
 
 ## 0.3 协议与报文通用规则
 
-### 0.3.1 0x10 正/负响应规则
+### 0x10 专用 NRC 优先级链
 
-- 正响应：`<service ID +40> + Subfunction + timing parameter`
-- 负响应：`7F <service ID> <NRC>`
+NRC 优先级链：共享 Figure 6 标准链，末尾追加 0x22（conditionsNotCorrect）
 
-典型 NRC：
-
-- `0x12`：Subfunction Not Supported
-- `0x13`：Incorrect Message Length Or Invalid Format
-- `0x22`：Conditions Not Correct
-- `0x7E`：Subfunction Not Supported In Active Session
-
-**NRC 优先级链（服务级，0x10 专用）**：
-
-| 优先级 | NRC | 触发条件 |
-|--------|-----|---------|
-| 1 | 0x13 | 长度错误（SF_DL≠2） |
-| 2 | 0x12 | 子功能不支持 |
-| 3 | 0x7E | 子功能在当前会话不支持 |
-| 4 | 0x22 | 前提条件不满足（如进入 Programming 前置条件） |
-
-### 0.3.2 0x11 正/负响应规则
-
-- 正响应：`<service ID +40> + Subfunction [+ resetTime]`
-- 负响应：`7F <service ID> <NRC>`
-
-典型 NRC：
-
-- `0x12`：Subfunction Not Supported
-- `0x13`：Incorrect Message Length Or Invalid Format
-- `0x22`：Conditions Not Correct
-- `0x7E`：Subfunction Not Supported In Active Session
-- `0x7F`：Service Not Supported In Active Session（客户模板中用于“当前会话下整体不支持 0x11 服务”的口径）
-
-### 0.3.3 SPRMIB 规则
-
-- 子功能抑制位：`0x80 + 原子功能`
-- 对 **执行成功** 的请求：
-  - 若支持 SPRMIB，则 **抑制肯定响应**，检查 `No_Response`
-- 对 **执行失败** 的请求：
-  - 仍返回 **否定响应**
-
-> **NRC 0x78（Response Pending）注意**：若项目中 ECU 在处理请求时可能先回 `NRC 0x78`（Request Correctly Received - Response Pending），则 SPRMIB 的 `No_Response` 检查需要排除 0x78：
-> - 收到 `7F <SID> 78` 说明请求已被接收且处理中，不应视为"无响应"
-> - 此时应等待最终响应（正响应或最终负响应），再判断是否满足 SPRMIB 抑制预期
-> - 根据项目实际情况决定是否需要特殊处理 0x78 场景
-
-
-### 0.3.4 0x10 进入会话的标准准备路径
-
-为了让自动生成器输出稳定、便于评审，进入当前会话建议统一使用如下规范路径：
-
-- 进入 Default：`10 01`
-- 进入 Extended：`10 01 -> Delay[1000]ms -> 10 03`
-- 进入 Programming：`10 01 -> Delay[1000]ms -> 10 03 -> 31 01 02 03 -> 10 02`
-
-> **重要**：进入 Programming 会话前必须先执行 RoutineControl（如 `31 01 02 03`），否则 ECU 可能拒绝进入 Programming。
-> 说明：这不是 ISO 唯一允许路径，沉淀出来的”标准建链路径”，便于统一生成。
-
-**退出路径规则**：若前置路径经过了 Programming 会话（`10 02`），再切回 Default（`10 01`）后，**必须插入 `Delay[1000]ms`**，等 ECU 完成会话切换后再执行下一步诊断请求。这是因为在 Programming 会话中 ECU 可能执行了内部状态变更，切回 Default 后需要时间完成清理。
-
-### 0.3.5 安全访问解锁的标准写法
+### 安全访问解锁的标准写法
 
 先根据 0x10 所在域读取 `Access Level`，再到 0x27 中取对应的 seed/key 对：
 
@@ -768,16 +703,8 @@
 
 ---
 
-> **注意**：0x11 (ECUReset) 的规则已迁移至独立文件 `prompts/service_0x11_prompt.md`。
-> 本文件仅包含 0x10 (DiagnosticSessionControl) 的规则。
+> **注意**：0x11 (ECUReset) 的规则已迁移至独立文件 `prompts/service_0x11_prompt.md`。本文件仅包含 0x10 (DiagnosticSessionControl) 的规则。
 
 ---
 
-## 生成注意事项
-
-1. **不可省略任何分类**，8 类必须全部生成（条件不满足的标明"无符合条件的用例"）
-2. **Boot 域也必须生成 Functional 用例**（当 Functional=Y 时）
-3. **不要生成任何"参数提取结果"或"分析"段落**，直接输出测试用例表格
-4. **输出格式严格为 pipe table**，列顺序：`| Case ID | Case名称 | 测试步骤 | 预期输出 |`
-5. **步骤中换行使用 `<br>` 标记**，不用 `\n`
-6. **NRC 优先级链从参数表精确读取**，不要猜测
+> **生成注意**：不可省略任何分类，8 类必须全部生成（条件不满足的标明"无符合条件的用例"）。Boot 域也必须生成 Functional 用例（当 Functional=Y 时）。NRC 优先级链从参数表精确读取，不要猜测。

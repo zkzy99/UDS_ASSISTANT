@@ -4,17 +4,12 @@
 
 - **Service ID**: 0x19
 - **Service Name**: ReadDTCInformation
-- **正响应 SID**: 0x59（0x19 + 0x40）
+- **正响应 SID**: 0x59
 - **负响应格式**: `7F 19 <NRC>`
 - **无 Subfunction 概念但有子功能编号**（0x01/0x02/0x04/0x06/0x0A 等），SPRMIB 不适用
 - **关键特性**: 各子功能有不同的请求/响应格式；需要 DTC 表数据支撑；需按逐 DTC 生成故障注入用例
-- **NRC 优先级链（服务级，0x19 专用）**:
-
-| 优先级 | NRC | 触发条件 |
-|--------|-----|---------|
-| 1 | 0x13 | 长度错误 |
-| 2 | 0x12 | 子功能不支持 |
-| 3 | 0x31 | DTC 编号或 Record Number 越界 |
+- **NRC 优先级链**：共享 Figure 6，追加 0x31（DTC 编号或 Record Number 越界）
+- **完整链**: 0x13 > 0x12 > 0x31
 
 ### 各子功能正响应格式
 
@@ -28,12 +23,7 @@
 
 ### 典型 NRC
 
-| NRC  | 含义 | 触发条件 |
-|------|------|---------|
-| 0x12 | Subfunction Not Supported | 发送了 0x19 不支持的子功能 |
-| 0x13 | Incorrect Message Length Or Invalid Format | 报文长度错误 |
-| 0x31 | Request Out Of Range | DTC 编号或 Record Number 越界 |
-| 0x7F | Service Not Supported In Active Session | 当前会话下不支持 0x19 服务 |
+均在共享 NRC 编码速查表中，无 0x19 专有补充。
 
 ---
 
@@ -43,12 +33,7 @@
 
 ### 软件域规则
 
-**必须为每个存在 0x19 服务的软件域独立生成完整用例集。**
-
-- Application / App 域：从 `ApplicationServices` Sheet 读取
-- Boot / BootLoader 域：从 `BootServices` Sheet 读取（若存在 0x19 行）
-
-若 Boot 域存在 0x19 数据，则为 Boot 域单独生成 Physical + Functional（如支持）的完整用例。
+见共享文件。若 Boot 域存在 0x19 数据，则为 Boot 域单独生成 Physical + Functional（如支持）的完整用例。
 
 ### 寻址方式规则
 
@@ -344,51 +329,20 @@ Send DiagBy[<Addr>]Data[19 01]WithLen[1];
 
 ## 会话进入标准路径
 
-为统一生成，进入各会话的标准路径如下：
-
-| 目标会话 | 标准进入步骤 |
-|---------|------------|
-| Default（0x01） | `Send DiagBy[Physical]Data[10 01];` |
-| Extended（0x03） | `Send DiagBy[Physical]Data[10 01];` → `Delay[1000]ms;` → `Send DiagBy[Physical]Data[10 03];` |
-| Programming（0x02） | `Send DiagBy[Physical]Data[10 01];` → `Delay[1000]ms;` → `Send DiagBy[Physical]Data[10 03];` → `Send DiagBy[Physical]Data[10 02];` |
-
----
-
-## 功能寻址用例生成规则
-
-**无论 `Functional Request` 是否支持，都必须生成 Functional 寻址用例。**
-
-当 `Functional Request = N` 时：
-1. 复制 Session Layer 所有正向用例，`[Physical]` 改为 `[Function]`
-2. 所有 Expected Output 统一改为 `Check No_Response Within[1000]ms;`
-3. Case ID 中 `Phy` 改为 `Fun`，编号继续 Phy 编号递增
-4. Incorrect Command 的 Functional 版也需生成
-
-当 `Functional Request = Y` 时：
-1. 复制所有 Physical 用例
-2. `[Physical]` 改为 `[Function]`
-3. Expected Output 与 Physical 相同
+见共享文件。0x19 无额外覆盖规则。
 
 ---
 
 ## 生成注意事项
 
-1. **Case ID 不可重复**，物理寻址 `Diag_0x19_Phy_001` 起递增
-2. **编号从 001 开始**，优先编写所有 Physical 用例，Functional 编号继续递增
-3. **每个 Send 都要有对应 Check**，除以下豁免：
-   - `Delay[...]ms` 不写 Check
-   - 带 `AndCheckResp[...]` 的发送函数不单独写 Check
-4. **DTC 编号格式为 3 字节**（如 5D 83 13），从 DTC 表读取
-5. **Session Layer 须测试多个 DTCStatusMask**（FF / 0x08 / 0x09），来自 GroupOfDTC 支持的 bit 位
-6. **不同子功能的合法 SF_DL 不同**，Incorrect Command 测试需标注合法值
-7. **DTC Read 必须按逐 DTC 生成**，每个 DTC 生成 t-09 活跃态 + t-08 恢复态各 1 条
-8. **输出格式严格为 pipe table**，列顺序：`| Case ID | Case名称 | 测试步骤 | 预期输出 |`
-9. **顶级标题使用 `#`**：如 `# 1. Application Service_Physical Addressing`、`# 2. Application Service_Functional Addressing` 等
-10. **分类标题使用 `##`**：如 `## 1.1 Session Layer Test` 等
-11. **各大组之间用 `---` 分隔**
-12. **无符合条件的用例时使用 `>` 引用**
-13. **步骤中换行使用 `<br>` 标记**，不用 `\n`
-9. **Functional 寻址无论是否支持都必须生成全套用例**
+> 通用规则（Case ID 不可重复、pipe table 格式、`<br>` 换行、每 Send 有 Check 等）见共享文件。
+
+1. **编号从 001 开始**，优先编写所有 Physical 用例，Functional 编号继续递增
+2. **DTC 编号格式为 3 字节**（如 5D 83 13），从 DTC 表读取
+3. **Session Layer 须测试多个 DTCStatusMask**（FF / 0x08 / 0x09），来自 GroupOfDTC 支持的 bit 位
+4. **不同子功能的合法 SF_DL 不同**，Incorrect Command 测试需标注合法值
+5. **DTC Read 必须按逐 DTC 生成**，每个 DTC 生成 t-09 活跃态 + t-08 恢复态各 1 条
+6. **Functional 寻址无论是否支持都必须生成全套用例**
 
 ### 分类 6: NRC Priority Test
 #### 用例数量规则

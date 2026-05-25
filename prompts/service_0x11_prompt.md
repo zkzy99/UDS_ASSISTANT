@@ -4,34 +4,15 @@
 
 - **Service ID**: 0x11
 - **Service Name**: ECUReset
-- **正响应 SID**: 0x51（0x11 + 0x40）
-- **负响应格式**: `7F 11 <NRC>`
 - **子功能**: 通常包含 01（HardReset）、02（KeyOffOnReset）、03（SoftReset），具体以参数表为准
 - **关键特性**: 先回正响应，再执行复位；复位期间 ECU 不响应其它请求
-- **NRC 优先级链（服务级，0x11 专用）**:
-
-| 优先级 | NRC | 触发条件 |
-|--------|-----|---------|
-| 1 | 0x13 | 长度错误（SF_DL≠2） |
-| 2 | 0x12 | 子功能不支持 |
-| 3 | 0x7E | 子功能在当前会话不支持 |
-| 4 | 0x22 | 前提条件不满足 |
+- **NRC 优先级链**：共享 Figure 6 标准链，末尾追加 0x22
 
 ### 正响应格式
 
 - 若 `reset_time Support = N`：`51 <Subfunction>`
 - 若 `reset_time Support = Y`：`51 <Subfunction> <ResetTime_H> <ResetTime_L>`
 - `reset_time` 是否支持从参数表 `1.Basic Diagnostic Infomation -> $11 Timing parameters` 读取
-
-### 典型 NRC
-
-| NRC  | 含义 | 触发条件 |
-|------|------|---------|
-| 0x12 | Subfunction Not Supported | 发送了 0x11 不支持的子功能 |
-| 0x13 | Incorrect Message Length Or Invalid Format | 报文长度错误（WithLen）或 DLC 异常 |
-| 0x22 | Conditions Not Correct | 前置条件不满足 |
-| 0x7E | Subfunction Not Supported In Active Session | 该子功能在当前会话下不支持 |
-| 0x7F | Service Not Supported In Active Session | 当前会话下整体不支持 0x11 服务（客户口径） |
 
 ---
 
@@ -56,13 +37,12 @@
 
 ### 输出格式要求
 
+输出格式遵循共享定义。0x11 补充规则：
+
 1. **顶级标题使用 `#`**：如 `# 1. Application Service_Physical Addressing`、`# 2. Application Service_Functional Addressing`、`# 3. Boot Service_Physical Addressing`、`# 4. Boot Service_Functional Addressing`
 2. **分类标题使用 `##`**：如 `## 1.1 Session Layer Test`、`## 1.2 SPRMIB Test`、`## 1.3 Secure Access Test` 等
 3. **各大组之间用 `---` 分隔**
 4. **无符合条件的用例时使用 `>` 引用**：如 `> App 域 0x11 所有子功能... 无符合条件的用例。`
-5. **输出格式严格为 pipe table**，列顺序：`| Case ID | Case名称 | 测试步骤 | 预期输出 |`
-6. **步骤中换行使用 `<br>` 标记**，不用 `\n`
-7. **不要生成任何"参数提取结果"或"分析"段落**，直接输出测试用例表格
 
 ---
 
@@ -527,18 +507,6 @@ Send Msg[<ReqCANID>]Data[02 11 <RepSub>]WithDLC[9];
 
 ---
 
-## 会话进入标准路径
-
-为统一生成，进入各会话的标准路径如下：
-
-| 目标会话 | 标准进入步骤 |
-|---------|------------|
-| Default（0x01） | `Send DiagBy[Physical]Data[10 01];` |
-| Extended（0x03） | `Send DiagBy[Physical]Data[10 01];` → `Delay[1000]ms;` → `Send DiagBy[Physical]Data[10 03];` |
-| Programming（0x02） | `Send DiagBy[Physical]Data[10 01];` → `Delay[1000]ms;` → `Send DiagBy[Physical]Data[10 03];` → `Send DiagBy[Physical]Data[10 02];` |
-
----
-
 ## 功能寻址用例生成规则
 
 当 `Functional Request = 支持` 时：
@@ -574,36 +542,6 @@ Send Msg[<ReqCANID>]Data[02 11 <RepSub>]WithDLC[9];
 
 1. **Case ID 不可重复**，物理寻址 `Diag_0x11_Phy_001` 起递增，功能寻址 `Diag_0x11_Fun_001` 起递增
 2. **编号从 001 开始**，优先编写所有 Physical 用例，再编写 Functional 用例
-3. **每个 Send 都要有对应 Check**，除以下豁免：
-   - `Delay[...]ms` 不写 Check
-   - 带 `AndCheckResp[...]` 的发送函数不单独写 Check
-   - `Check MsgInexist[...]` / `Check MsgExist[...]` 本身就是检查，不再重复
-4. **步骤和 Check 的编号必须对应**
-5. **不可省略任何分类**，所有分类必须全部生成（条件不满足的标明"无符合条件的用例"）
-6. **输出格式严格为 pipe table**，列顺序：`| Case ID | Case名称 | 测试步骤 | 预期输出 |`
-7. **步骤中换行使用 `<br>` 标记**，不用 `\n`
-8. **NRC 优先级链从参数表精确读取**，不要猜测
-9. **不要生成任何"参数提取结果"或"分析"段落**，直接输出测试用例表格
-10. **进入 Programming 会话前必须先执行 RoutineControl**（如 `31 01 02 03`），否则 ECU 可能拒绝进入 Programming
-
-## Timing 参数提取规则
-
-从参数表精确提取：
-- P2 Server Max → 直接读取 ms 值，hex 编码公式：`P2ms / 1` → 转为 2 字节 hex
-- P2* Server Max → hex 编码公式：`P2*ms / 10` → 转为 2 字节 hex
-- 示例：P2=50ms → 50=0x0032 → `00 32`；P2*=5000ms → 500=0x01F4 → `01 F4`
-- **正响应 Timing Bytes 用于 0x10 Session 切换响应**（`50 <Sub> 00 32 01 F4`），不直接用于 0x11 正响应
-
-## 会话进入标准路径
-
-| 目标会话 | 标准进入步骤 |
-|---------|------------|
-| Default（0x01） | `Send DiagBy[Physical]Data[10 01];` |
-| Extended（0x03） | `Send DiagBy[Physical]Data[10 01];` → `Delay[1000]ms;` → `Send DiagBy[Physical]Data[10 03];` |
-| Programming（0x02） | `Send DiagBy[Physical]Data[10 01];` → `Delay[1000]ms;` → `Send DiagBy[Physical]Data[10 03];` → `Send DiagBy[Physical]Data[31 01 02 03];` → `Send DiagBy[Physical]Data[10 02];` |
-
-**重要**：进入 Programming 会话前必须先执行 RoutineControl（如 `31 01 02 03`）。
-
-**31 服务（RoutineControl）正响应格式**：
-- 请求 `31 01 02 03` → 正响应 `71 01 02 03 00`（5 字节，最后 1 字节为 routineStatus）
-- **不要遗漏最后的状态字节 `00`**
+3. **步骤和 Check 的编号必须对应**
+4. **不可省略任何分类**，所有分类必须全部生成（条件不满足的标明"无符合条件的用例"）
+5. **NRC 优先级链从参数表精确读取**，不要猜测
