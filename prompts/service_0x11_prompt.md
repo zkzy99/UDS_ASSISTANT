@@ -4,15 +4,34 @@
 
 - **Service ID**: 0x11
 - **Service Name**: ECUReset
+- **正响应 SID**: 0x51（0x11 + 0x40）
+- **负响应格式**: `7F 11 <NRC>`
 - **子功能**: 通常包含 01（HardReset）、02（KeyOffOnReset）、03（SoftReset），具体以参数表为准
 - **关键特性**: 先回正响应，再执行复位；复位期间 ECU 不响应其它请求
-- **NRC 优先级链**：共享 Figure 6 标准链，末尾追加 0x22
+- **NRC 优先级链（服务级，0x11 专用）**:
+
+| 优先级 | NRC | 触发条件 |
+|--------|-----|---------|
+| 1 | 0x13 | 长度错误（SF_DL≠2） |
+| 2 | 0x12 | 子功能不支持 |
+| 3 | 0x7E | 子功能在当前会话不支持 |
+| 4 | 0x22 | 前提条件不满足 |
 
 ### 正响应格式
 
 - 若 `reset_time Support = N`：`51 <Subfunction>`
 - 若 `reset_time Support = Y`：`51 <Subfunction> <ResetTime_H> <ResetTime_L>`
 - `reset_time` 是否支持从参数表 `1.Basic Diagnostic Infomation -> $11 Timing parameters` 读取
+
+### 典型 NRC
+
+| NRC  | 含义 | 触发条件 |
+|------|------|---------|
+| 0x12 | Subfunction Not Supported | 发送了 0x11 不支持的子功能 |
+| 0x13 | Incorrect Message Length Or Invalid Format | 报文长度错误（WithLen）或 DLC 异常 |
+| 0x22 | Conditions Not Correct | 前置条件不满足 |
+| 0x7E | Subfunction Not Supported In Active Session | 该子功能在当前会话下不支持 |
+| 0x7F | Service Not Supported In Active Session | 当前会话下整体不支持 0x11 服务（客户口径） |
 
 ---
 
@@ -37,12 +56,50 @@
 
 ### 输出格式要求
 
-输出格式遵循共享定义。0x11 补充规则：
-
 1. **顶级标题使用 `#`**：如 `# 1. Application Service_Physical Addressing`、`# 2. Application Service_Functional Addressing`、`# 3. Boot Service_Physical Addressing`、`# 4. Boot Service_Functional Addressing`
 2. **分类标题使用 `##`**：如 `## 1.1 Session Layer Test`、`## 1.2 SPRMIB Test`、`## 1.3 Secure Access Test` 等
 3. **各大组之间用 `---` 分隔**
 4. **无符合条件的用例时使用 `>` 引用**：如 `> App 域 0x11 所有子功能... 无符合条件的用例。`
+5. **输出格式严格为 pipe table**，列顺序：`| Case ID | Case名称 | 测试步骤 | 预期输出 |`
+6. **步骤中换行使用 `<br>` 标记**，不用 `\n`
+7. **不要生成任何"参数提取结果"或"分析"段落**，直接输出测试用例表格
+
+#### 步骤序号强制规则（重要）
+
+#### 两个字段的职责划分
+
+> **`test_procedure` 只写"操作动作"，`expected_output` 只写"Check 检查"，两者共用同一套序号，Check 的序号与对应 Send 步骤编号一致。**
+
+| 字段 | 写什么 | 不写什么 |
+|------|--------|---------|
+| `test_procedure` | Send / Delay / Set / Change 等**操作** | 不写 Check（Check 放到 expected_output） |
+| `expected_output` | Check DiagData / Check No_Response 等**检查** | 不写 Send / Delay / Set |
+
+**序号规则：**
+- `test_procedure` 步骤按 `1.` `2.` `3.` ... 顺序编号
+- `expected_output` 的 Check 编号与 `test_procedure` 中对应 Send 步骤编号**完全一致**
+- 没有 Check 的步骤（`Delay`、`Set Voltage` 等）在 `expected_output` 中跳过，序号不连续是正常的
+- `AndCheckResp[...]` 步骤在 `test_procedure` 中计入序号，但**不在** `expected_output` 中单独出现（已内含检查）
+
+**错误格式示例（禁止）：**
+- `test_procedure` 中混入 Check 语句（如 `2.Check DiagData[...]`）——Check 必须在 `expected_output`
+- `expected_output` 只写最后一条 Check，忽略前面所有步骤的 Check
+- 使用 `Step1:` 格式（禁止，必须用 `1.`）
+- 序号与内容之间有空格（`1. Send` 禁止，必须是 `1.Send`）
+
+> **`test_procedure` 和 `expected_output` 字段中，每一行都必须以 `N.` 序号开头，序号与内容之间无空格，行与行之间用 `<br>` 分隔。**
+
+**错误格式示例（禁止）：**
+- `Step1: Send DiagBy[Physical]Data[10 03];`（**严禁使用 `Step1:` 格式**）
+- `Send DiagBy[Physical]Data[10 03];<br>Check DiagData[...]Within[50]ms;`（缺少序号）
+- `1. Send DiagBy[Physical]Data[10 03];`（序号与内容之间不得有空格）
+
+规则细则：
+1. 序号从 `1.` 开始递增，格式为 `1.` `2.` `3.` ...，**中间无空格、无冒号、无其他字符**
+2. 每个 Send / Check / Delay / Set 等操作各占一行，独立编号
+3. `expected_output` 序号与 `test_procedure` 中对应步骤编号一致；仅一行时也必须写 `1.`
+4. `AndCheckResp[...]` 步骤不在 `expected_output` 中单独列出，但在 `test_procedure` 中计入序号
+5. `Delay[...]ms;` 步骤计入 `test_procedure` 序号，不在 `expected_output` 中出现
 
 ---
 
@@ -119,10 +176,14 @@
 必须覆盖**所有会话 × 支持的子功能的 SPRMIB 变体**。
 
 - 子功能支持 + SPRMIB=Y + 正向成功 → No_Response
-- 子功能支持 + SPRMIB=N → 按原子子功能处理，正常返回响应或 NRC
+- 子功能支持 + SPRMIB=N → 发送 `11 <0x80 + Sub>`，ECU 不支持抑制位，返回 NRC 0x12
 - 会话不支持该子功能 → NRC 0x7E
 
 > **关键规则**：SPRMIB Test **不生成全局不支持的子功能（Support=N）用例**。Session Layer 已覆盖 NRC 0x12 场景，SPRMIB 版本预期相同（仍是 NRC 0x12），属于重复测试。
+
+> **SPRMIB 支持性判断规则**：从参数表 `Supported Services` sheet 的 SPRMIB 列读取：
+> - 若标注为 `Y` / `TRUE (0)` / `(Response)` → ECU **支持**抑制位，正向请求预期 `No_Response`
+> - 若标注为 `N` / `suppressPosRspMsgIndicationBit= TRUE (1) (No response)` → ECU **不支持**抑制位；客户端发送带 suppress bit 的请求（`11 <0x80 + Sub>`），ECU 必须回复 **NRC 0x12**（Subfunction Not Supported），预期为 `Check DiagData[7F 11 12]Within[50]ms;`
 
 **总数 = 可达会话数 × 支持的子功能数**（不含全局不支持的）
 
@@ -138,9 +199,10 @@
    - `11 01` → `11 81`
    - `11 02` → `11 82`
    - `11 03` → `11 83`
-2. **必须追加复位后状态确认步骤**（因为正向响应被抑制，需额外验证复位生效）
+2. **SPRMIB=Y 正向场景**：必须追加复位后状态确认步骤（因为正向响应被抑制，需额外验证复位生效）
+3. **SPRMIB=N 正向场景**：无需追加额外验证步骤，直接检查 NRC 0x12
 
-正向完整步骤示例：
+正向且 SPRMIB=Y 完整步骤示例：
 ```
 1. 进入 Extended 会话
 2. Send DiagBy[Physical]Data[11 81];
@@ -148,14 +210,24 @@
 4. 验证复位后回到 Default（若支持 F186 用 22 F1 86，否则用 31 服务）
 ```
 
+正向且 SPRMIB=N 完整步骤示例：
+```
+1. 进入 Extended 会话
+2. Send DiagBy[Physical]Data[11 81];
+```
+
 #### Check 规则
 
-**若原场景正向成功：**
+**若原场景正向成功且 SPRMIB=Y（支持抑制位）：**
 - 第 2 步：`Check No_Response Within[1000]ms;`
 - 第 4 步：验证复位后回到默认会话（按优先级选择验证方式）：
   1. 若支持 DID F186：`Send DiagBy[Physical]Data[22 F1 86];` → `Check DiagData[62 F1 86 01]Within[50]ms;`
   2. 若不支持 F186：通过 31 服务 — `Send DiagBy[Physical]Data[31 01 02 03];` → `Check DiagData[7F 31 7F]Within[50]ms;`
   3. 或通过 28 服务 / 27 服务验证
+
+**若原场景正向成功且 SPRMIB=N（不支持抑制位）：**
+- 第 2 步：`Check DiagData[7F 11 12]Within[50]ms;`
+- 说明：ECU 收到带 suppress bit 的请求但不支持该特性，按 NRC 优先级链应回复 NRC 0x12
 
 **若原场景负向：**
 - 仍返回负响应，规则同 Session Layer
@@ -164,9 +236,10 @@
 
 #### 特殊规则
 
-1. 正向 SPRMIB 场景必须追加状态确认（F186 或 31/28/27 服务），否则无法证明请求生效
-2. Delay 步骤不写 check
-3. No_Response 只适用于成功且支持 SPRMIB 的场景
+1. 正向且 SPRMIB=Y 场景必须追加状态确认（F186 或 31/28/27 服务），否则无法证明请求生效
+2. 正向且 SPRMIB=N 场景预期为 NRC 0x12，无需追加状态确认
+3. Delay 步骤不写 check
+4. No_Response 只适用于成功且支持 SPRMIB（SPRMIB=Y）的场景
 
 ---
 
@@ -197,7 +270,8 @@
 
 #### Check 规则
 
-- 第 1 步：`Check DiagData[50 03 ...]Within[50]ms;`
+- 第 1 步：`Check DiagData[50 03 <P2_H> <P2_L> <P2*_H> <P2*_L>]Within[50]ms;`
+  - **必须将 `<P2_H> <P2_L> <P2*_H> <P2*_L>` 替换为从参数表 `Timing parameters` 提取的具体 hex 值**，禁止使用省略号 `...` 代替
 - 第 2 步：不单独写 Expected Output（AndCheckResp 已内含检查）
 - 第 3 步：`Check DiagData[67 <KeySub>]Within[50]ms;`
 - 第 4 步：
@@ -542,6 +616,69 @@ Send Msg[<ReqCANID>]Data[02 11 <RepSub>]WithDLC[9];
 
 1. **Case ID 不可重复**，物理寻址 `Diag_0x11_Phy_001` 起递增，功能寻址 `Diag_0x11_Fun_001` 起递增
 2. **编号从 001 开始**，优先编写所有 Physical 用例，再编写 Functional 用例
-3. **步骤和 Check 的编号必须对应**
-4. **不可省略任何分类**，所有分类必须全部生成（条件不满足的标明"无符合条件的用例"）
-5. **NRC 优先级链从参数表精确读取**，不要猜测
+3. **每个 Send 都要有对应 Check**，除以下豁免：
+   - `Delay[...]ms` 不写 Check
+   - 带 `AndCheckResp[...]` 的发送函数不单独写 Check
+   - `Check MsgInexist[...]` / `Check MsgExist[...]` 本身就是检查，不再重复
+4. **步骤和 Check 的编号必须对应**
+5. **不可省略任何分类**，所有分类必须全部生成（条件不满足的标明"无符合条件的用例"）
+6. **输出格式严格为 pipe table**，列顺序：`| Case ID | Case名称 | 测试步骤 | 预期输出 |`
+7. **步骤中换行使用 `<br>` 标记**，不用 `\n`
+8. **NRC 优先级链从参数表精确读取**，不要猜测
+9. **不要生成任何"参数提取结果"或"分析"段落**，直接输出测试用例表格
+10. **进入 Programming 会话前必须先执行扩展会话,例如 `[10 03]`
+11. **禁止在预期输出中使用省略号 `...`**：所有 hex 参数必须从参数表提取具体值后填入。例如 `[50 03 ...]` 是错误的，必须写为 `[50 03 00 32 01 F4]`（以参数表实际值为准）。又如 `[50 01 ...]` 必须写为 `[50 01 00 32 01 F4]`。
+
+## Timing 参数提取规则
+
+从参数表精确提取：
+- P2 Server Max → 直接读取 ms 值，hex 编码公式：`P2ms / 1` → 转为 2 字节 hex
+- P2* Server Max → hex 编码公式：`P2*ms / 10` → 转为 2 字节 hex
+- 示例：P2=50ms → 50=0x0032 → `00 32`；P2*=5000ms → 500=0x01F4 → `01 F4`
+- **正响应 Timing Bytes 用于 0x10 Session 切换响应**（`50 <Sub> 00 32 01 F4`），不直接用于 0x11 正响应
+
+## 会话进入标准路径
+
+| 目标会话 | 标准进入步骤 |
+|---------|------------|
+| Default（0x01） | `Send DiagBy[Physical]Data[10 01];` |
+| Extended（0x03） | `Send DiagBy[Physical]Data[10 01];` → `Delay[1000]ms;` → `Send DiagBy[Physical]Data[10 03];` |
+| Programming（0x02） | `Send DiagBy[Physical]Data[10 01];` → `Delay[1000]ms;` → `Send DiagBy[Physical]Data[10 03];` → `Send DiagBy[Physical]Data[31 01 02 03];` → `Send DiagBy[Physical]Data[10 02];` |
+
+**重要**：进入 Programming 会话前必须先执行 RoutineControl（如 `31 01 02 03`）。
+
+**31 服务（RoutineControl）正响应格式**：
+- 请求 `31 01 02 03` → 正响应 `71 01 02 03 00`（5 字节，最后 1 字节为 routineStatus）
+- **不要遗漏最后的状态字节 `00`**
+
+### 会话进入展开规则（强制）
+
+**会话进入必须展开为独立编号步骤，严禁使用描述性语句。**
+
+> **禁止示例**（错误）：`1.按照01进03，03进02的顺序进入Programming会话`
+> **禁止示例**（错误）：`1.进入 Extended 会话`
+> 必须逐条写出每个 Send / Delay / Check，各自独立编号。
+
+**进入 Extended 会话的正确写法（test_procedure）：**
+```
+1.Send DiagBy[Physical]Data[10 01];
+2.Delay[1000]ms;
+3.Send DiagBy[Physical]Data[10 03];
+```
+
+**进入 Programming 会话的正确写法（test_procedure）：**
+```
+1.Send DiagBy[Physical]Data[10 01];
+2.Delay[1000]ms;
+3.Send DiagBy[Physical]Data[10 03];
+4.Delay[1000]ms;
+5.Send DiagBy[Physical]Data[10 02];
+```
+
+**对应的 expected_output（必须填入从参数表提取的 Timing 参数）：**
+```
+1.Check DiagData[50 01 <P2_H> <P2_L> <P2*_H> <P2*_L>]Within[50]ms;
+3.Check DiagData[50 03 <P2_H> <P2_L> <P2*_H> <P2*_L>]Within[50]ms;
+5.Check DiagData[50 02 <P2_H> <P2_L> <P2*_H> <P2*_L>]Within[50]ms;
+```
+**`<P2_H> <P2_L> <P2*_H> <P2*_L>` 必须替换为从参数表 `Timing parameters` 提取的 hex 值，严禁使用 `...` 省略号。如果参数为空设置为默认值`[00 32 01 F4]`**
