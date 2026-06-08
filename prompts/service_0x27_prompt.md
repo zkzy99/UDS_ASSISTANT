@@ -98,13 +98,14 @@
 
 #### Check 规则
 
+> **种子请求的 Check 规则（强制）**：所有种子请求（27 01/03/05/07/09/11）必须使用 `AndCheckResp[PositiveResponse]` 语法，**不在 expected_output 中单独写 Check**——`AndCheckResp` 已内含正响应检查。种子数据为随机值不可预测，禁止写 `Check DiagData[67 XX XX XX XX XX]`。
+
 **A. 不支持的会话：**
-- `Check DiagData[7F 27 7F]Within[50]ms;`（会话不支持）
-- 或 `Check DiagData[7F 27 7E]Within[50]ms;`（子功能在当前会话不支持）
+- `AndCheckResp` 中使用对应的 NRC 码（`0x7F` 或 `0x7E`），不单独写 Check
 
 **B. 支持的会话正向：**
-- 第 2 步：Seed 正响应
-- 第 3 步：`Check DiagData[67 <KeySub>]Within[50]ms;`
+- 第 2 步（种子）：不单独写 Check（AndCheckResp 已内含检查）
+- 第 3 步（密钥）：`Check DiagData[67 <KeySub>]Within[50]ms;`
 
 ---
 
@@ -138,9 +139,9 @@
 **A. 仅请求 seed：**
 ```
 1. 进入 Extended 会话
-2. Send DiagBy[Physical]Data[27 <SeedSub>];
+2. Send DiagBy[Physical]Data[27 <SeedSub>]AndCheckResp[PositiveResponse];
 ```
-Check: `Check DiagData[67 <SeedSub> <SeedData>]Within[50]ms;`
+> 种子请求使用 `AndCheckResp[PositiveResponse]`，不在 expected_output 中单独写 Check。
 
 **B. 直接发 key：**
 ```
@@ -180,7 +181,7 @@ Check: 第 2 步和第 3 步 ECU 返回的 seed 数据完全相同（`67 <SeedSu
 3. Send Security Right KeyBy[Physical]Level[<KeySub>];
 4. Send DiagBy[Physical]Data[27 <SeedSub>]AndCheckResp[PositiveResponse];
 ```
-Check: 第 4 步 `Check DiagData[67 <SeedSub> 00 00 00 00]Within[50]ms;`（全零表示已解锁）
+> 步骤 2/4 为种子请求，使用 `AndCheckResp[PositiveResponse]` 已内含检查，不在 expected_output 中单独写 Check。步骤 4 的 expected_output 中**不写** `Check DiagData[67 XX XX XX XX XX]`。
 
 ---
 
@@ -234,14 +235,14 @@ A1: 最大尝试次数触发
 5. Send Security Wrong KeyBy[Physical]Level[<KeySub>];（第2次错误）
 6. Send DiagBy[Physical]Data[27 <SeedSub>]AndCheckResp[PositiveResponse];
 7. Send Security Wrong KeyBy[Physical]Level[<KeySub>];（第3次错误 → 0x36）
-8. Send DiagBy[Physical]Data[27 <SeedSub>];（锁定后 → 0x37）
+8. Send DiagBy[Physical]Data[27 <SeedSub>]AndCheckResp[0x37];（锁定后 → 0x37）
 ```
 
 A2: 等待延时后可请求
 ```
 （接 A1 之后）
 Delay[10000]ms;
-Send DiagBy[Physical]Data[27 <SeedSub>];（→ 正常返回 seed）
+Send DiagBy[Physical]Data[27 <SeedSub>]AndCheckResp[PositiveResponse];（→ 正常返回 seed）
 ```
 
 A5: FAAflag=True 复位
@@ -250,12 +251,13 @@ A5: FAAflag=True 复位
 2. Set Voltage[0]V; Delay[1000]ms;
 3. Set Voltage[12]V; Delay[1000]ms;
 4. 进入会话
-5. Send DiagBy[Physical]Data[27 <SeedSub>];（→ 0x37，counter 保留）
+5. Send DiagBy[Physical]Data[27 <SeedSub>]AndCheckResp[0x37];（→ 0x37，counter 保留）
 ```
 
 A6: FAAflag=False 复位
 ```
 同 A5，但第 5 步 → 正常返回 seed（counter 清零）
+5. Send DiagBy[Physical]Data[27 <SeedSub>]AndCheckResp[PositiveResponse];
 ```
 
 **路径 B: 连续 seed 请求**
@@ -263,22 +265,24 @@ A6: FAAflag=False 复位
 B1: 最大 seed 请求次数
 ```
 1. 进入 Extended 会话
-2. Send DiagBy[Physical]Data[27 <SeedSub>];（第1次，正常）
-3. Send DiagBy[Physical]Data[27 <SeedSub>];（第2次，正常）
-4. Send DiagBy[Physical]Data[27 <SeedSub>];（第3次，正常）
-5. Send DiagBy[Physical]Data[27 <SeedSub>];（第4次 → 0x36）
+2. Send DiagBy[Physical]Data[27 <SeedSub>]AndCheckResp[PositiveResponse];（第1次，正常）
+3. Send DiagBy[Physical]Data[27 <SeedSub>]AndCheckResp[PositiveResponse];（第2次，正常）
+4. Send DiagBy[Physical]Data[27 <SeedSub>]AndCheckResp[PositiveResponse];（第3次，正常）
+5. Send DiagBy[Physical]Data[27 <SeedSub>]AndCheckResp[0x36];（第4次 → 0x36）
 ```
 
 B2-B8: 类似 A2-A8 但使用连续 seed 请求路径
 
 #### Check 规则
 
-- 第 1-2 次错误密钥：`7F 27 35`（InvalidKey）
-- 第 3 次错误密钥：`7F 27 36`（ExceededAttempts）
-- 锁定后请求：`7F 27 37`（TimeDelay）
-- 延时到期后：正常返回 seed
-- FAAflag=True 复位后：`7F 27 37`（counter 保留）
-- FAAflag=False 复位后：正常返回 seed（counter 清零）
+> **种子/密钥步骤均使用 AndCheckResp 语法，不在 expected_output 中单独写 Check。**
+
+- 第 1-2 次错误密钥：AndCheckResp 内含 `7F 27 35`（InvalidKey），不单独写 Check
+- 第 3 次错误密钥：AndCheckResp 内含 `7F 27 36`（ExceededAttempts），不单独写 Check
+- 锁定后请求种子：AndCheckResp 内含 `7F 27 37`（TimeDelay），不单独写 Check
+- 延时到期后请求种子：AndCheckResp 内含 `PositiveResponse`（正常返回 seed），不单独写 Check
+- FAAflag=True 复位后请求种子：AndCheckResp 内含 `7F 27 37`（counter 保留），不单独写 Check
+- FAAflag=False 复位后请求种子：AndCheckResp 内含 `PositiveResponse`（正常返回 seed），不单独写 Check
 
 ---
 
@@ -300,12 +304,12 @@ B2-B8: 类似 A2-A8 但使用连续 seed 请求路径
 3. Delay[<S3 - delta>]ms;（如 4900ms）
 4. Send DiagBy[Physical]Data[3E 00];（TesterPresent 维持会话）
 5. Delay[<S3 - delta>]ms;
-6. Send DiagBy[Physical]Data[27 <SeedSub>];（检查安全状态）
+6. Send DiagBy[Physical]Data[27 <SeedSub>]AndCheckResp[PositiveResponse];（检查安全状态）
 ```
 
 #### Check 规则
 
-- 第 6 步：`Check DiagData[67 <SeedSub> 00 00 00 00]Within[50]ms;`（已解锁态，返回全零 seed）
+- 第 6 步（种子）：不单独写 Check（AndCheckResp 已内含检查）——**禁止**写 `Check DiagData[67 <SeedSub> 00 00 00 00]`
 
 ---
 
@@ -338,9 +342,9 @@ B2-B8: 类似 A2-A8 但使用连续 seed 请求路径
 3. Set Voltage[0]V; Delay[1000]ms;
 4. Set Voltage[12]V; Delay[1000]ms;
 5. 进入 Extended 会话
-6. Send DiagBy[Physical]Data[27 <SeedSub>];
+6. Send DiagBy[Physical]Data[27 <SeedSub>]AndCheckResp[<ExpectedResp>];
 ```
-Check: 根据安全状态返回 seed 或 NRC
+> 根据 FAAflag 安全状态，`<ExpectedResp>` 为 `PositiveResponse`（FAAflag=False，counter 清零）或 `0x37`（FAAflag=True，counter 保留）。
 
 **B. Hardware Reset(11 01)：**
 ```
@@ -348,8 +352,9 @@ Check: 根据安全状态返回 seed 或 NRC
 2. 完成 seed/key 解锁
 3. Send DiagBy[Physical]Data[11 01]; Delay[2000]ms;
 4. 进入 Extended 会话
-5. Send DiagBy[Physical]Data[27 <SeedSub>];
+5. Send DiagBy[Physical]Data[27 <SeedSub>]AndCheckResp[<ExpectedResp>];
 ```
+> 同 Power Reset，`<ExpectedResp>` 根据 FAAflag 取值。
 
 **C. Session Switch：**
 ```
@@ -357,13 +362,13 @@ Check: 根据安全状态返回 seed 或 NRC
 2. 完成 seed/key 解锁
 3. Send DiagBy[Physical]Data[10 01];（切回 Default → 安全状态重置）
 4. Send DiagBy[Physical]Data[10 03];
-5. Send DiagBy[Physical]Data[27 <SeedSub>];（→ 非全零 seed，已锁定）
+5. Send DiagBy[Physical]Data[27 <SeedSub>]AndCheckResp[PositiveResponse];（→ 非全零 seed，已锁定）
 ```
 
 **D. Software Reset(11 03)：**
 ```
 1. 进入 Extended 会话
-2. Send DiagBy[Physical]Data[27 <SeedSub>];（验证正常请求 seed）
+2. Send DiagBy[Physical]Data[27 <SeedSub>]AndCheckResp[PositiveResponse];（验证正常请求 seed）
 ```
 
 ---
@@ -535,6 +540,62 @@ Boot 域生成与 APP 域类似结构的测试集，但有以下差异：
 ## 输出格式要求
 
 见共享文件。额外规则：**每个分类标题使用 `## N.N` 格式**，如 `## 1.1 Session Layer Test`、`## 1.2 Secure Access Process Test`。
+
+### 步骤序号强制规则（重要）
+
+#### 两个字段的职责划分
+
+> **`test_procedure` 只写"操作动作"，`expected_output` 只写"Check 检查"，两者共用同一套序号，Check 的序号与对应 Send 步骤编号一致。**
+
+| 字段 | 写什么 | 不写什么 |
+|------|--------|---------|
+| `test_procedure` | Send / Delay / Set / Change 等**操作** | 不写 Check（Check 放到 expected_output） |
+| `expected_output` | Check DiagData / Check No_Response 等**检查** | 不写 Send / Delay / Set |
+
+**序号规则：**
+- `test_procedure` 步骤按 `1.` `2.` `3.` ... 顺序编号
+- `expected_output` 的 Check 编号与 `test_procedure` 中对应 Send 步骤编号**完全一致**
+- 没有 Check 的步骤（`Delay`、`Set Voltage` 等）在 `expected_output` 中跳过，序号不连续是正常的
+- `AndCheckResp[...]` 步骤在 `test_procedure` 中计入序号，但**不在** `expected_output` 中单独出现（已内含检查）
+
+**正确格式示例（以 session 进入 + seed/key 解锁为例）：**
+```
+test_procedure:
+  1.Send DiagBy[Physical]Data[10 01];
+  2.Delay[1000]ms;
+  3.Send DiagBy[Physical]Data[10 03];
+  4.Send DiagBy[Physical]Data[27 01]AndCheckResp[PositiveResponse];
+  5.Send Security Right KeyBy[Physical]Level[02];
+
+expected_output:
+  1.Check DiagData[50 01 XX XX XX XX]Within[50]ms;
+  3.Check DiagData[50 03 XX XX XX XX]Within[50]ms;
+  5.Check DiagData[67 02]Within[50]ms;
+```
+说明：步骤 2（Delay）无 Check 跳过；步骤 4 为种子请求使用 `AndCheckResp` 已内含检查，不在 expected_output 中单独列出；步骤 5 为密钥请求，Check 写 `67 <KeySub>`（仅 1 字节确认）。序号 1/3/5 对应 test_procedure 中对应步骤编号。
+
+### 种子请求（Seed）处理规则（强制）
+
+> **所有种子请求（27 <SeedSub>，即 27 01 / 27 03 / 27 05 / 27 07 / 27 09 / 27 11）必须使用 `AndCheckResp[PositiveResponse]` 或 `AndCheckResp[<NRC>]` 语法，**严禁**在 expected_output 中单独写 Check 检查种子响应数据。**
+
+**原因**：种子数据由 ECU 随机生成（通常 4 字节），测试端不可预测其具体值，无法精确写入 `Check DiagData[67 XX XX XX XX XX]`。
+
+**规则：**
+1. 种子请求正响应：`Send DiagBy[Physical]Data[27 01]AndCheckResp[PositiveResponse];`
+2. 种子请求负响应：`Send DiagBy[Physical]Data[27 01]AndCheckResp[0x37];`（示例：锁定后返回 0x37）
+3. expected_output 中**不出现**种子步骤的 Check 行（编号跳过）
+
+**禁止格式示例（错误）：**
+- `test_procedure: 2.Send DiagBy[Physical]Data[27 01];` 配合 `expected_output: 2.Check DiagData[67 01 XX XX XX XX]Within[50]ms;`（**严禁**：种子数据不可预测，且 AndCheckResp 已处理）
+
+**正确格式示例：**
+- `test_procedure: 2.Send DiagBy[Physical]Data[27 01]AndCheckResp[PositiveResponse];` → expected_output 中**不写**第 2 步的 Check
+- `test_procedure: 5.Send DiagBy[Physical]Data[27 03]AndCheckResp[0x37];` → expected_output 中**不写**第 5 步的 Check
+**错误格式示例（禁止）：**
+- `test_procedure` 中混入 Check 语句（如 `2.Check DiagData[...]`）——Check 必须在 `expected_output`
+- `expected_output` 只写最后一条 Check，忽略前面所有步骤的 Check
+- 使用 `Step1:` 格式（禁止，必须用 `1.`）
+- 序号与内容之间有空格（`1. Send` 禁止，必须是 `1.Send`）
 
 ## 生成注意事项
 
