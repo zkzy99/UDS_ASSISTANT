@@ -30,6 +30,53 @@
 
 ---
 
+
+1. **顶级标题使用 `#`**：如 `# 1. Application Service_Physical Addressing`、`# 2. Application Service_Functional Addressing`、`# 3. Boot Service_Physical Addressing`、`# 4. Boot Service_Functional Addressing`
+2. **分类标题使用 `##`**：如 `## 1.1 Session Layer Test`、`## 1.2 SPRMIB Test`、`## 1.3 Secure Access Test` 等
+3. **各大组之间用 `---` 分隔**
+4. **无符合条件的用例时使用 `>` 引用**：如 `> App 域 0x11 所有子功能... 无符合条件的用例。`
+5. **输出格式严格为 pipe table**，列顺序：`| Case ID | Case名称 | 测试步骤 | 预期输出 |`
+6. **步骤中换行使用 `<br>` 标记**，不用 `\n`
+7. **不要生成任何"参数提取结果"或"分析"段落**，直接输出测试用例表格
+
+#### 步骤序号强制规则（重要）
+
+#### 两个字段的职责划分
+
+> **`test_procedure` 只写"操作动作"，`expected_output` 只写"Check 检查"，两者共用同一套序号，Check 的序号与对应 Send 步骤编号一致。**
+
+| 字段 | 写什么 | 不写什么 |
+|------|--------|---------|
+| `test_procedure` | Send / Delay / Set / Change 等**操作** | 不写 Check（Check 放到 expected_output） |
+| `expected_output` | Check DiagData / Check No_Response 等**检查** | 不写 Send / Delay / Set |
+
+**序号规则：**
+- `test_procedure` 步骤按 `1.` `2.` `3.` ... 顺序编号
+- `expected_output` 的 Check 编号与 `test_procedure` 中对应 Send 步骤编号**完全一致**
+- 没有 Check 的步骤（`Delay`、`Set Voltage` 等）在 `expected_output` 中跳过，序号不连续是正常的
+- `AndCheckResp[...]` 步骤在 `test_procedure` 中计入序号，但**不在** `expected_output` 中单独出现（已内含检查）
+
+**错误格式示例（禁止）：**
+- `test_procedure` 中混入 Check 语句（如 `2.Check DiagData[...]`）——Check 必须在 `expected_output`
+- `expected_output` 只写最后一条 Check，忽略前面所有步骤的 Check
+- 使用 `Step1:` 格式（禁止，必须用 `1.`）
+- 序号与内容之间有空格（`1. Send` 禁止，必须是 `1.Send`）
+
+> **`test_procedure` 和 `expected_output` 字段中，每一行都必须以 `N.` 序号开头，序号与内容之间无空格，行与行之间用 `<br>` 分隔。**
+
+**错误格式示例（禁止）：**
+- `Step1: Send DiagBy[Physical]Data[10 03];`（**严禁使用 `Step1:` 格式**）
+- `Send DiagBy[Physical]Data[10 03];<br>Check DiagData[...]Within[50]ms;`（缺少序号）
+- `1. Send DiagBy[Physical]Data[10 03];`（序号与内容之间不得有空格）
+
+规则细则：
+1. 序号从 `1.` 开始递增，格式为 `1.` `2.` `3.` ...，**中间无空格、无冒号、无其他字符**
+2. 每个 Send / Check / Delay / Set 等操作各占一行，独立编号
+3. `expected_output` 序号与 `test_procedure` 中对应步骤编号一致；仅一行时也必须写 `1.`
+4. `AndCheckResp[...]` 步骤不在 `expected_output` 中单独列出，但在 `test_procedure` 中计入序号
+5. `Delay[...]ms;` 步骤计入 `test_procedure` 序号，不在 `expected_output` 中出现
+
+
 ## 生成分类（共 5 类）
 
 按以下固定顺序逐类生成，每个分类使用 `## N.N` 作为标题（如 `## 1.1 Session Layer Test`）。
