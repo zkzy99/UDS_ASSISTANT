@@ -4,14 +4,21 @@
 
 - **Service ID**: 0x14
 - **Service Name**: ClearDiagnosticInformation
-- **正响应 SID**: 0x54
+- **正响应 SID**: 0x54（0x14 + 0x40）
 - **负响应格式**: `7F 14 <NRC>`
 - **请求格式**: `14 FF FF FF`（清除所有 DTC 组）
 - **合法 SF_DL**: 4 字节（SID + 3 字节 groupOfDTC）
 - **关键特性**: 清除 DTC 后需用 0x19 验证清除效果；清除前需先确认有 DTC 可清
 - **Functional 寻址特殊规则**: 0x14 服务在 Functional 寻址下**抑制正响应**，所有正向 Functional 用例预期输出均为 `No_Response`
-- **NRC 优先级链**：共享 Figure 6，追加 0x72（generalProgrammingFailure，清除操作写入内存失败）
-- **完整链**: 0x13 > 0x31 > 0x22 > 0xXX > 0x72
+- **NRC 优先级链（服务级，Figure 0x14 专用）**:
+
+| 优先级 | NRC | 触发条件 |
+|--------|-----|---------|
+| 1 | 0x13 | 长度错误（SF_DL≠4） |
+| 2 | 0x31 | groupOfDTC 不支持 |
+| 3 | 0x22 | 前提条件不满足 |
+| 4 | 0xXX | 厂商/供应商自定义 |
+| 5 | 0x72 | 清除操作写入内存失败 |
 
 ### 正响应格式
 
@@ -19,7 +26,35 @@
 
 ### 典型 NRC
 
-均在共享 NRC 编码速查表中。0x14 专有补充：NRC 0x72（清除操作写入内存失败，见优先级链）。
+| NRC  | 含义 | 触发条件 |
+|------|------|---------|
+| 0x11 | Service Not Supported | ECU（App 域或 Boot 域）不支持 0x14 服务 |
+| 0x13 | Incorrect Message Length Or Invalid Format | 报文长度错误（SF_DL ≠ 4） |
+| 0x22 | Conditions Not Correct | 前置条件不满足 |
+| 0x31 | Request Out Of Range | groupOfDTC 值不支持 |
+| 0x7F | Service Not Supported In Active Session | 当前会话下不支持 0x14 服务 |
+
+---
+
+## 服务支持性判断规则（首要规则，生成前必须读取）
+
+> **在生成任何用例之前，必须先从参数表 `Supported Services` sheet 的 `Support` 列判断 0x14 服务是否支持。**
+
+| 参数表 `Support` 列标注 | 含义 | 用例预期 |
+|------------------------|------|---------|
+| `M`（Mandatory，强制支持） | ECU **支持** 0x14 服务 | 正向请求预期 `Check DiagData[54]Within[50]ms;` |
+| `Y`（Yes，明确支持） | ECU **支持** 0x14 服务 | 正向请求预期 `Check DiagData[54]Within[50]ms;` |
+| `S`（Optional/Selectable，**可选但本项目未选用**） | ECU **不支持** 0x14 服务 | 所有请求均预期 `Check DiagData[7F 14 11]Within[50]ms;`（NRC 0x11） |
+| `O`（Optional，可选，未实现） | ECU **不支持** 0x14 服务 | 所有请求均预期 `Check DiagData[7F 14 11]Within[50]ms;`（NRC 0x11） |
+| `N`（No，明确不支持） | ECU **不支持** 0x14 服务 | 所有请求均预期 `Check DiagData[7F 14 11]Within[50]ms;`（NRC 0x11） |
+| 空 / 子功能为 `/` | ECU **不支持** 0x14 服务 | 所有请求均预期 `Check DiagData[7F 14 11]Within[50]ms;`（NRC 0x11） |
+
+> **重要**：`S`（Optional）表示该服务在规范中可选，**不代表本 ECU 实现了该服务**。只有明确标注 `M` 或 `Y` 才视为支持；`S`/`O`/`N`/空值 一律视为不支持，预期 NRC 0x11。
+
+**当 0x14 不支持时的生成规则：**
+- App Physical / Boot Physical：所有用例预期为 `Check DiagData[7F 14 11]Within[50]ms;`
+- App Functional / Boot Functional：所有用例预期为 `Check No_Response Within[1000]ms;`（Functional 寻址下 NRC 0x11 被抑制）
+- 分类结构仍按"整体结构要求"生成，但内容仅保留 Session Layer Test，其余分类标注"无符合条件的用例"
 
 ---
 
@@ -34,11 +69,13 @@
 
 ### 输出格式要求
 
-见共享文件。额外规则：
 1. **顶级标题使用 `#`**：如 `# 1. Application Service_Physical Addressing`、`# 2. Application Service_Functional Addressing`、`# 3. Boot Service_Physical Addressing`、`# 4. Boot Service_Functional Addressing`
 2. **分类标题使用 `##`**：如 `## 1.1 Session Layer Test`、`## 1.2 Secure Access Test`、`## 1.3 Clear DTC Function Test` 等
 3. **各大组之间用 `---` 分隔**
 4. **无符合条件的用例时使用 `>` 引用**：如 `> App 域无符合条件的用例。`
+5. **输出格式严格为 pipe table**，列顺序：`| Case ID | Case名称 | 测试步骤 | 预期输出 |`
+6. **步骤中换行使用 `<br>` 标记**，不用 `\n`
+7. **不要生成任何"参数提取结果"或"分析"段落**，直接输出测试用例表格
 
 ---
 
@@ -52,43 +89,64 @@
 
 #### 用例数量规则
 
+**当 0x14 服务支持（Support = M 或 Y）时：**
 - `Npos` = 支持的会话正向 case 数（每个支持 0x14 的会话 1 条）
 - `Nneg_sess` = 不支持的会话负向 case 数（每个不支持 0x14 的会话 1 条）
 - **总数 = Npos + Nneg_sess**
 
+**当 0x14 服务不支持（Support = S / O / N / 空，或子功能为 `/`）时：**
+- 每个可达会话各生成 1 条，预期均为 NRC 0x11
+- **总数 = 可达会话数**
+
 #### 用例命名规则
 
+**0x14 支持（M/Y）时：**
 - 正向：`<CurrentSessionName> Session support 0x14 services`
   - 示例：`Default Session support 0x14 services`
 - 负向（会话不支持）：`<CurrentSessionName> Session nonsupport 0x14 services`
   - 示例：`Programming Session nonsupport 0x14 services`
 
+**0x14 不支持（S/O/N/空）时：**
+- 所有会话均为负向：`<CurrentSessionName> Session nonsupport 0x14 services`
+  - 示例：`Default Session nonsupport 0x14 services`
+
 #### 测试步骤模板
 
-**A. 当前会话支持 0x14 服务（正向）**
+**A. 当前会话支持 0x14 服务（正向，仅 Support = M 或 Y 时生成）**
 ```
 1. 进入 <CurrentSessionSupport>
 2. Send DiagBy[Physical]Data[14 FF FF FF];
 ```
 
-**B. 当前会话不支持 0x14 服务（负向）**
+**B. 当前会话不支持 0x14 服务（会话级负向）**
 ```
 1. 进入 <CurrentSessionNotSupport>
 2. Send DiagBy[Physical]Data[14 FF FF FF];
 ```
 
+**C. ECU 整体不支持 0x14 服务（Support = S/O/N/空，所有会话均适用）**
+```
+1. 进入 <CurrentSession>
+2. Send DiagBy[Physical]Data[14 FF FF FF];
+```
+
 #### Check 规则
 
-**A. 支持会话正向：**
+**A. 支持会话正向（Support = M 或 Y）：**
 - `Check DiagData[54]Within[50]ms;`
 
-**B. 当前会话不支持服务：**
+**B. 当前会话不支持服务（会话级）：**
 - `Check DiagData[7F 14 7F]Within[50]ms;`
+
+**C. ECU 整体不支持 0x14（Support = S/O/N/空）：**
+- Physical 寻址：`Check DiagData[7F 14 11]Within[50]ms;`
+- Functional 寻址：`Check No_Response Within[1000]ms;`
 
 #### 特殊规则
 
 1. Session Layer Test 仅验证会话是否支持 0x14 服务，不涉及故障制造和清除验证
 2. 故障制造和清除验证在分类 3 (Clear DTC Test) 中进行
+3. **当 Support = S/O/N/空 时，分类 2-5 均标注"无符合条件的用例"，不生成实质内容**
 
 ---
 
@@ -96,8 +154,13 @@
 
 #### 用例数量规则
 
-**必须生成**，即使 0x14 在 Level0 即可执行。从参数表读取所有安全等级，为每个安全等级生成 1 条用例。
+**当 0x14 服务支持（Support = M 或 Y）时：**
+- **必须生成**，即使 0x14 在 Level0 即可执行
+- 从参数表读取所有安全等级，为每个安全等级生成 1 条用例
 - **总数 = 安全等级数量**（至少 1 条）
+
+**当 0x14 服务不支持（Support = S/O/N/空）时：**
+- 标注"无符合条件的用例"，不生成实质内容
 
 #### 用例命名规则
 
@@ -131,6 +194,7 @@
 
 #### 用例数量规则
 
+**当 0x14 服务支持（Support = M 或 Y）时：**
 固定 5 条，覆盖以下场景：
 
 | 序号 | 场景 | 描述 |
@@ -140,6 +204,9 @@
 | 3 | 清除多个 DTC（状态 09） | 制造多个故障后一次清除 |
 | 4 | 清除单个 DTC（状态 08） | 仅 confirmedDTC |
 | 5 | 清除多个 DTC（状态 08） | 多个故障的 08 状态 |
+
+**当 0x14 服务不支持（Support = S/O/N/空）时：**
+- 标注"无符合条件的用例"，不生成实质内容
 
 #### 用例命名规则
 
@@ -217,12 +284,16 @@
 
 #### 用例数量规则
 
-**固定 2 条**（仅 SF_DL 等价类测试，不生成 DLC 测试）
+**当 0x14 服务支持（Support = M 或 Y）时：**
+固定 2 条（仅 SF_DL 等价类测试，不生成 DLC 测试）
 
 | 序号 | 错误类型 | 描述 |
 |------|---------|------|
 | 1 | SF_DL > 4 | 有效负载长度大于合法值 |
 | 2 | SF_DL < 4 | 有效负载长度小于合法值 |
+
+**当 0x14 服务不支持（Support = S/O/N/空）时：**
+- 标注"无符合条件的用例"，不生成实质内容
 
 #### 用例命名规则
 
@@ -261,7 +332,11 @@ Send DiagBy[Physical]Data[14 FF FF FF]WithLen[3];
 
 #### 用例数量规则
 
+**当 0x14 服务支持（Support = M 或 Y）时：**
 固定 1 条，验证 NRC 优先级链。
+
+**当 0x14 服务不支持（Support = S/O/N/空）时：**
+- 标注"无符合条件的用例"，不生成实质内容
 
 #### 用例命名规则
 
@@ -287,7 +362,13 @@ Send DiagBy[Physical]Data[14 FF FF FF]WithLen[3];
 
 ## 会话进入标准路径
 
-见共享文件。
+为统一生成，进入各会话的标准路径如下：
+
+| 目标会话 | 标准进入步骤 |
+|---------|------------|
+| Default（0x01） | `Send DiagBy[Physical]Data[10 01];` |
+| Extended（0x03） | `Send DiagBy[Physical]Data[10 01];` → `Send DiagBy[Physical]Data[10 03];` |
+| Programming（0x02） | `Send DiagBy[Physical]Data[10 01];` → `Send DiagBy[Physical]Data[10 03];` → `Send DiagBy[Physical]Data[31 01 02 03];` → `Send DiagBy[Physical]Data[10 02];` |
 
 **会话进入步骤的 Expected Output 规则（重要）：**
 - 会话进入步骤（10 01、10 03、10 02）**不使用 AndCheckResp**，必须在 Expected Output 中显式写出对应的 Check
@@ -315,7 +396,7 @@ Send DiagBy[Physical]Data[14 FF FF FF]WithLen[3];
 5. **所有 0x14 请求的 Functional 用例预期输出均为 `Check No_Response Within[1000]ms;`**
    - 0x14 服务在 Functional 寻址下抑制正响应（ISO 14229 规范）
    - 即使服务在对应会话中支持，Functional 寻址下也不返回 54 正响应
-   - NRC 0x13 在 Functional 寻址下同样被抑制，返回 No_Response
+   - NRC 0x11、NRC 0x13 在 Functional 寻址下同样被抑制，返回 No_Response
 
 ### Boot 域规则
 
@@ -332,11 +413,17 @@ Send DiagBy[Physical]Data[14 FF FF FF]WithLen[3];
 
 ## 生成注意事项
 
-> 通用规则（Case ID 不可重复、pipe table 格式、`<br>` 换行、每 Send 有 Check 等）见共享文件。
-
-1. **编号从 001 开始**，按 App Phy → App Fun → Boot Phy → Boot Fun 顺序编写
-2. **DTC 验证必须成对出现**：清除前验证存在 + 清除后验证已清除
-3. **故障制造方法从 DTC 表读取**，不同 DTC 的触发条件不同
-4. **不要跳过任何分类**：Secure Access 即使 Level0=Y 也必须生成；Boot 域即使不支持也必须生成 Session Layer 测试
-5. **不要在会话进入步骤之间添加 Delay**，直接连续发送
-6. **不要在会话进入步骤（10 01、10 03、10 02）使用 AndCheckResp**
+1. **Case ID 不可重复**，物理寻址 `Diag_0x14_Phy_001` 起递增，功能寻址 `Diag_0x14_Fun_001` 起递增
+2. **编号从 001 开始**，按 App Phy → App Fun → Boot Phy → Boot Fun 顺序编写
+3. **每个 Send 都要有对应 Check**，除以下豁免：
+   - `Delay[...]ms` 不写 Check
+   - 只有 `27 XX` Seed 请求使用 `AndCheckResp[PositiveResponse]`，其不单独写 Check
+   - 会话进入步骤（10 01、10 03、10 02）和 RoutineControl（31 01 02 03）**必须**在 Expected Output 中写显式 Check
+4. **Expected Output 编号 = Test Procedure 步骤编号**，一一对应
+5. **DTC 验证必须成对出现**：清除前验证存在 + 清除后验证已清除
+6. **故障制造方法从 DTC 表读取**，不同 DTC 的触发条件不同
+7. **不要跳过任何分类**：Secure Access 即使 Level0=Y 也必须生成；Boot 域即使不支持也必须生成 Session Layer 测试
+8. **输出格式**：使用 pipe table `| Case ID | Case名称 | 测试步骤 | 预期输出 |`，多行用 `<br>` 分隔
+9. **不要在会话进入步骤之间添加 Delay**，直接连续发送
+10. **不要在会话进入步骤（10 01、10 03、10 02）使用 AndCheckResp**
+11. **生成前首先读取参数表 `Support` 列**：值为 `M` 或 `Y` 才视为支持，`S`/`O`/`N`/空/子功能为 `/` 一律视为不支持；不支持时 App 域分类 2-5 全部标注"无符合条件的用例"，所有 Physical 用例预期 NRC 0x11
