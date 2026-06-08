@@ -25,6 +25,44 @@
 
 ---
 
+## Timing 参数读取规则（必须执行，生成前先提取）
+
+> **0x10 会话进入的正响应格式为 `50 <Sub> <P2_H> <P2_L> <P2*_H> <P2*_L>`，其中 P2/P2* 字节必须从参数表精确读取，禁止使用占位符。**
+
+### 读取来源优先级（按顺序查找，取第一个有值的来源）
+
+**第 1 优先：`时序参数` sheet**
+- 直接读取 `P2Server Max`（单位 ms）和 `P2*Server Max`（单位 ms）字段
+- 编码：`P2ms → 十进制转 2 字节 hex`；`P2*ms / 10 → 十进制转 2 字节 hex`
+- 示例：P2=50ms → `00 32`；P2\*=2000ms → `200 → 00 C8`；P2\*=5000ms → `500 → 01 F4`
+
+**第 2 优先：`时序参数` sheet 为空时，从已生成的其他服务测试结果反推**
+- 若同一输入文件已生成过 0x10 服务的测试用例，从其 `expected_output` 中读取 `50 01 XX XX XX XX` 的实际值直接复用
+- 例如已有 `Check DiagData[50 01 00 32 00 C8]`，则 P2=`00 32`，P2\*=`00 C8`
+
+**第 3 优先：从输入 Excel 文本中的 `支持的服务` sheet 查找 0x10 行的备注列**
+- 部分项目在备注列注明了 P2/P2\* 值，需仔细检索
+
+**第 4 优先（兜底）：从同次生成上下文中读取其他服务已用过的 timing 值**
+- 若同次生成中其他服务（如 0x27、0x11）已写出了 `50 0x XX XX XX XX` 的实际值，直接复用相同的 P2/P2\* 字节
+
+> **严禁在没有确认实际值的情况下写 `50 01 XX XX XX XX` 或 `50 01`（仅 SID + 子功能，缺少 timing 字节）。** 必须写出完整的 6 字节正响应。
+
+### 0x10 正响应格式
+
+```
+Check DiagData[50 01 <P2_H> <P2_L> <P2*_H> <P2*_L>]Within[50]ms;
+Check DiagData[50 03 <P2_H> <P2_L> <P2*_H> <P2*_L>]Within[50]ms;
+Check DiagData[50 02 <P2_H> <P2_L> <P2*_H> <P2*_L>]Within[50]ms;
+```
+
+**错误示例（禁止）：**
+- `Check DiagData[50 01]Within[50]ms;` — 缺少 timing 字节
+- `Check DiagData[50 01 XX XX XX XX]Within[50]ms;` — XX 是占位符，不是实际值
+- `Check DiagData[50 03 00 32 01 F4]Within[50]ms;` — 若实际 P2\*=2000ms，正确应为 `00 32 00 C8`，不能混用其他项目的值
+
+---
+
 ## 生成分类（共 9 类）
 
 按以下固定顺序逐类生成，每个分类使用 `## N.N` 作为标题（如 `## 1.1 Session Layer Test`）。
@@ -474,6 +512,55 @@ Send DiagBy[Physical]Data[28 03 01]WithLen[2];
 - 所有 Functional 发送的测试步骤：`Check No_Response Within[1000]ms;`
 - 安全访问仍使用 Physical：`Check DiagData[67 <KeySub>]Within[50]ms;`
 - MsgInexist/MsgExist 验证仍保留
+
+---
+
+## 输出格式要求
+
+**输出格式严格为 pipe table**，列顺序：`| Case ID | Case名称 | 测试步骤 | 预期输出 |`，步骤中换行使用 `<br>` 标记，不用 `\n`。
+
+### 步骤序号强制规则（重要）
+
+#### 两个字段的职责划分
+
+> **`test_procedure` 只写"操作动作"，`expected_output` 只写"Check 检查"，两者共用同一套序号，Check 的序号与对应 Send 步骤编号一致。**
+
+| 字段 | 写什么 | 不写什么 |
+|------|--------|---------|
+| `test_procedure` | Send / Delay / Set / Change 等**操作** | 不写 Check（Check 放到 expected_output） |
+| `expected_output` | Check DiagData / Check No_Response / Check MsgInexist / Check MsgExist 等**检查** | 不写 Send / Delay / Set |
+
+**序号规则：**
+- `test_procedure` 步骤按 `1.` `2.` `3.` ... 顺序编号，格式为 `1.内容`，**中间无空格、无冒号**
+- `expected_output` 的 Check 编号与 `test_procedure` 中对应 Send 步骤编号**完全一致**
+- 没有 Check 的步骤（`Delay`、`Set Voltage` 等）在 `expected_output` 中跳过，序号不连续是正常的
+- `AndCheckResp[...]` 步骤在 `test_procedure` 中计入序号，但**不在** `expected_output` 中单独出现（已内含检查）
+- `Check MsgInexist[...]` / `Check MsgExist[...]` 在 `test_procedure` 中计入序号，不在 `expected_output` 中重复出现
+
+**正确格式示例（以进入 Extended 会话 + 发送 0x28 为例）：**
+```
+test_procedure:
+  1.Send DiagBy[Physical]Data[10 01];
+  2.Delay[1000]ms;
+  3.Send DiagBy[Physical]Data[10 03];
+  4.Send DiagBy[Physical]Data[28 03 01];
+  5.Check MsgInexist[0x21F];
+  6.Send DiagBy[Physical]Data[28 00 01];
+  7.Check MsgExist[0x21F];
+
+expected_output:
+  1.Check DiagData[50 01 <P2_H> <P2_L> <P2*_H> <P2*_L>]Within[50]ms;
+  3.Check DiagData[50 03 <P2_H> <P2_L> <P2*_H> <P2*_L>]Within[50]ms;
+  4.Check DiagData[68 03]Within[50]ms;
+  6.Check DiagData[68 00]Within[50]ms;
+```
+说明：步骤 2（Delay）无 Check 跳过；步骤 5/7（MsgInexist/MsgExist）本身是检查动作，不在 expected_output 中重复；序号 1/3/4/6 与 test_procedure 对应步骤一致。
+
+**错误格式示例（禁止）：**
+- `Step1: Send DiagBy[Physical]Data[10 03];`（**严禁使用 `Step1:` 格式**）
+- `test_procedure` 中混入 Check 语句——Check 必须在 `expected_output`
+- `expected_output` 只写最后一条 Check，忽略前面所有步骤的 Check
+- `1. Send DiagBy[Physical]Data[10 03];`（序号与内容之间不得有空格）
 
 ---
 
