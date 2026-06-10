@@ -507,6 +507,7 @@ async def generate_test_cases(
     id: str = Form(...),
     username: str = Form(...),
     realName: str = Form(...),
+    params: str = Form("{}"),
 ):
     """异步生成测试用例：校验通过后立即返回，处理完成后回调通知结果。"""
     if not file.filename:
@@ -539,6 +540,12 @@ async def generate_test_cases(
 
     author = f"{realName}-{username}"
 
+    # 解析 params
+    try:
+        params_dict = json.loads(params)
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="params 不是合法的 JSON")
+
     # 启动后台任务
     asyncio.create_task(
         _process_and_callback(
@@ -549,6 +556,7 @@ async def generate_test_cases(
             original_filename=file.filename or "",
             callback_url=callback_url,
             author=author,
+            params=params_dict,
         )
     )
 
@@ -566,6 +574,7 @@ async def _process_and_callback(
     original_filename: str,
     callback_url: str,
     author: str = "",
+    params: dict | None = None,
 ):
     """后台处理所有服务并通过回调返回结果。"""
     start = time.time()
@@ -585,6 +594,7 @@ async def _process_and_callback(
                     domain=domain,
                     original_filename=original_filename,
                     author=author,
+                    params=params,
                 )
                 results.append(result)
                 if not ecu_info and result.test_cases:

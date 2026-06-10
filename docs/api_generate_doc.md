@@ -17,6 +17,7 @@
 | `id` | String | 是 | 请求标识，由调用方传入，回调时原样返回 |
 | `username` | String | 是 | 工号，如 `E12345` |
 | `realName` | String | 是 | 用户姓名，如 `张三` |
+| `params` | String (JSON) | 否 | JSON 对象，用于替换 LLM 输出中的占位符，如 `{"P2":"50","P2*":"1000"}`。详见下方 params 替换规则 |
 
 #### 响应（HTTP 202）
 
@@ -32,8 +33,19 @@
 
 | 状态码 | 说明 |
 |--------|------|
-| 400 | 未提供文件、文件格式不对、未指定服务、服务 ID 不支持 |
+| 400 | 未提供文件、文件格式不对、未指定服务、服务 ID 不支持、params 不是合法 JSON |
 | 500 | 未配置回调地址 |
+
+#### params 替换规则
+
+当 `params` 中同时包含 `P2` 和 `P2*` 且均为 0-65535 的非负整数时，LLM 输出中的 `XX XX XX XX` 占位符将被替换为实际的时序 hex 值：
+
+- P2 → 2 字节 hex（大端）
+- P2* → (P2* / 10) → 2 字节 hex（大端）
+
+示例：`P2=50, P2*=1000` → `XX XX XX XX` 替换为 `00 32 00 64`
+
+不满足条件时（缺失、非整数、超范围），占位符保持原样不做替换。
 
 #### Java 调用示例
 
@@ -49,6 +61,7 @@ body.add("domain", "App");
 body.add("id", "test-001");
 body.add("username", "E12345");
 body.add("realName", "张三");
+body.add("params", "{\"P2\":\"50\",\"P2*\":\"1000\"}");
 
 HttpEntity<MultiValueMap<String, Object>> request = new HttpEntity<>(body, headers);
 ResponseEntity<String> response = restTemplate.postForEntity(
