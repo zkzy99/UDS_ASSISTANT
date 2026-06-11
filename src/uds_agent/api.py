@@ -507,7 +507,7 @@ async def generate_test_cases(
     id: str = Form(...),
     username: str = Form(...),
     realName: str = Form(...),
-    params: str = Form("{}"),
+    extraParams: str = Form("{}"),
 ):
     """异步生成测试用例：校验通过后立即返回，处理完成后回调通知结果。"""
     if not file.filename:
@@ -542,9 +542,9 @@ async def generate_test_cases(
 
     # 解析 params
     try:
-        params_dict = json.loads(params)
+        params_dict = json.loads(extraParams)
     except json.JSONDecodeError:
-        raise HTTPException(status_code=400, detail="params 不是合法的 JSON")
+        raise HTTPException(status_code=400, detail="extraParams 不是合法的 JSON")
 
     # 启动后台任务
     asyncio.create_task(

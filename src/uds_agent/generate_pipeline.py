@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
 import re
 import time
@@ -72,9 +73,12 @@ class UDSGeneratePipeline:
         }
 
     @staticmethod
-    def _cache_key(excel_path: str, service_id: str, domain: str, cache_dir: str) -> Path:
+    def _cache_key(excel_path: str, service_id: str, domain: str, cache_dir: str, params: dict | None = None) -> Path:
         md5 = hashlib.md5(Path(excel_path).read_bytes()).hexdigest()
-        return Path(cache_dir) / f"{md5}_{service_id}_{domain}.json"
+        params_suffix = ""
+        if params:
+            params_suffix = "_" + hashlib.md5(json.dumps(params, sort_keys=True).encode()).hexdigest()[:8]
+        return Path(cache_dir) / f"{md5}_{service_id}_{domain}{params_suffix}.json"
 
     @staticmethod
     def _replace_p2_placeholder(content: str, params: dict | None, service_id: str) -> str:
@@ -152,10 +156,7 @@ class UDSGeneratePipeline:
         # 缓存检查
         cache_path = None
         if self._cache_cfg["enabled"]:
-            cache_path = self._cache_key(excel_path, service_id, domain, self._cache_cfg["dir"])
-            if cache_path.exists():
-                logger.info(f"[{service_id}] cache hit: {cache_path.name}")
-                return ServiceTestResult.model_validate_json(cache_path.read_text(encoding="utf-8"))
+            cache_path = self._cache_key(excel_path, service_id, domain, self._cache_cfg["dir"], params)
             if cache_path.exists():
                 logger.info(f"[{service_id}] cache hit: {cache_path.name}")
                 return ServiceTestResult.model_validate_json(cache_path.read_text(encoding="utf-8"))

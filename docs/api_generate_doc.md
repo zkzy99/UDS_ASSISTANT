@@ -17,7 +17,7 @@
 | `id` | String | 是 | 请求标识，由调用方传入，回调时原样返回 |
 | `username` | String | 是 | 工号，如 `E12345` |
 | `realName` | String | 是 | 用户姓名，如 `张三` |
-| `params` | String (JSON) | 否 | JSON 对象，用于替换 LLM 输出中的占位符，如 `{"P2":"50","P2*":"1000"}`。详见下方 params 替换规则 |
+| `extraParams` | String (JSON) | 否 | JSON 对象，用于替换 LLM 输出中的占位符，如 `{"P2":"50","P2*":"1000"}`。详见下方 params 替换规则 |
 
 #### 响应（HTTP 202）
 
@@ -33,7 +33,7 @@
 
 | 状态码 | 说明 |
 |--------|------|
-| 400 | 未提供文件、文件格式不对、未指定服务、服务 ID 不支持、params 不是合法 JSON |
+| 400 | 未提供文件、文件格式不对、未指定服务、服务 ID 不支持、extraParams 不是合法 JSON |
 | 500 | 未配置回调地址 |
 
 #### params 替换规则
@@ -61,7 +61,7 @@ body.add("domain", "App");
 body.add("id", "test-001");
 body.add("username", "E12345");
 body.add("realName", "张三");
-body.add("params", "{\"P2\":\"50\",\"P2*\":\"1000\"}");
+body.add("extraParams", "{\"P2\":\"50\",\"P2*\":\"1000\"}");
 
 HttpEntity<MultiValueMap<String, Object>> request = new HttpEntity<>(body, headers);
 ResponseEntity<String> response = restTemplate.postForEntity(
