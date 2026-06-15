@@ -79,18 +79,36 @@
 
 #### 测试步骤模板
 
-**支持会话正向（可读 DID）**
+**⚠️ 关键规则：test_procedure 中只写 Send/Delay/Set 操作，绝对不要写 Check 语句！Check 一律放到 expected_output 中。**
+
+**A. Default 会话正向（可读 DID）**
 ```
-1. 进入目标会话（按标准路径）
+1. Send DiagBy[Physical]Data[10 01];
 2. Send DiagBy[Physical]Data[22 <DID_H> <DID_L>];
 ```
 
-#### Check 规则
+**B. Extended 会话正向（可读 DID）**
+```
+1. Send DiagBy[Physical]Data[10 01];
+2. Send DiagBy[Physical]Data[10 03];
+3. Send DiagBy[Physical]Data[22 <DID_H> <DID_L>];
+```
 
-**支持会话正向：**
-- `Check DiagData[62 <DID_H> <DID_L> <DataContent>]Within[50]ms;`
+#### Check 规则（expected_output）
+
+**A. Default 会话正向：**
+- 第 1 步：`Check DiagData[50 01 <P2_H> <P2_L> <P2*_H> <P2*_L>]Within[50]ms;`
+- 第 2 步：`Check DiagData[62 <DID_H> <DID_L> <DataContent>]Within[50]ms;`
+
+**B. Extended 会话正向：**
+- 第 1 步：`Check DiagData[50 01 <P2_H> <P2_L> <P2*_H> <P2*_L>]Within[50]ms;`
+- 第 2 步：`Check DiagData[50 03 <P2_H> <P2_L> <P2*_H> <P2*_L>]Within[50]ms;`
+- 第 3 步：`Check DiagData[62 <DID_H> <DID_L> <DataContent>]Within[50]ms;`
+
+**DataContent 填充规则：**
 - DataContent 长度 = DID 的 Byte Length
-- 固定值用实际值（如 F186=当前会话号 01/02/03），可变值用 xx
+- 固定值用实际值（如 F186=当前会话号 01/02/03）
+- 可变值用 xx
 
 #### 特殊规则
 
@@ -99,6 +117,8 @@
 3. 若 DID 支持 Read 但未定义 Default 值，用 xx 占位
 4. 特殊 DID 示例：DID 0xF186（Active Diagnostic Session），1 字节，值=当前会话号（01/02/03）
 5. DID 列表从 DID 表（Sheet 含 "DID" 或 "0x22"/"0x2E"）读取，包括 Basic DIDs 和 RDBI DIDs
+6. **test_procedure 中只写操作（Send/Delay/Set），绝对禁止写 Check；Check 一律写到 expected_output 中**
+7. **Expected Output 编号与 Test Procedure 步骤编号一一对应，session entry 的 Check 不可省略**
 
 ---
 
@@ -119,26 +139,49 @@
 
 #### 测试步骤模板
 
+**⚠️ test_procedure 中只写 Send/Delay/Set 操作，绝对不要写 Check 语句！AndCheckResp 步骤除外（但也不写 Check）。**
+
 **APP 域（Extended Session）**：
 ```
-1. 进入 Extended Session（按标准路径）
-2. Send DiagBy[Physical]Data[27 <SeedSub>]AndCheckResp[PostiveResponse];
-3. Send Security Right KeyBy[Physical]Level[<KeySub>];
-4. Send DiagBy[Physical]Data[22 <DID_H> <DID_L>];
+1. Send DiagBy[Physical]Data[10 01];
+2. Send DiagBy[Physical]Data[10 03];
+3. Send DiagBy[Physical]Data[27 <SeedSub>]AndCheckResp[PostiveResponse];
+4. Send Security Right KeyBy[Physical]Level[<KeySub>];
+5. Send DiagBy[Physical]Data[22 <DID_H> <DID_L>];
 ```
 
 **Boot 域（Programming Session）**：
 ```
-1. 进入 Boot Programming Session（按 Boot 标准路径）
-2. Send DiagBy[Physical]Data[27 <BootSeedSub>]AndCheckResp[PostiveResponse];
-3. Send Security Right KeyBy[Physical]Level[<BootKeySub>];
-4. Send DiagBy[Physical]Data[22 <DID_H> <DID_L>];
+1. Send DiagBy[Physical]Data[10 01];
+2. Delay[1000]ms;
+3. Send DiagBy[Physical]Data[10 03];
+4. Send DiagBy[Physical]Data[31 01 02 03];
+5. Send DiagBy[Physical]Data[10 02];
+6. Send DiagBy[Physical]Data[27 <BootSeedSub>]AndCheckResp[PostiveResponse];
+7. Send Security Right KeyBy[Physical]Level[<BootKeySub>];
+8. Send DiagBy[Physical]Data[22 <DID_H> <DID_L>];
 ```
 
-#### Check 规则
+#### Check 规则（expected_output）
 
-- 第 3 步：`Check DiagData[67 <KeySub>]Within[50]ms;`
-- 第 4 步：`Check DiagData[62 <DID_H> <DID_L> <DataContent>]Within[50]ms;`
+**APP 域（Extended Session）：**
+- 第 1 步：`Check DiagData[50 01 <P2_H> <P2_L> <P2*_H> <P2*_L>]Within[50]ms;`
+- 第 2 步：`Check DiagData[50 03 <P2_H> <P2_L> <P2*_H> <P2*_L>]Within[50]ms;`
+- 第 3 步：不写 Check（AndCheckResp 内含检查）
+- 第 4 步：`Check DiagData[67 <KeySub>]Within[50]ms;`
+- 第 5 步：`Check DiagData[62 <DID_H> <DID_L> <DataContent>]Within[50]ms;`
+
+**Boot 域（Programming Session）：**
+- 第 1 步：`Check DiagData[50 01 <P2_H> <P2_L> <P2*_H> <P2*_L>]Within[50]ms;`
+- 第 2 步：不写 Check（Delay 为非诊断操作）
+- 第 3 步：`Check DiagData[50 03 <P2_H> <P2_L> <P2*_H> <P2*_L>]Within[50]ms;`
+- 第 4 步：`Check DiagData[71 01 02 03 00]Within[50]ms;`
+- 第 5 步：`Check DiagData[50 02 <P2_H> <P2_L> <P2*_H> <P2*_L>]Within[50]ms;`
+- 第 6 步：不写 Check（AndCheckResp 内含检查）
+- 第 7 步：`Check DiagData[67 <BootKeySub>]Within[50]ms;`
+- 第 8 步：`Check DiagData[62 <DID_H> <DID_L> <DataContent>]Within[50]ms;`
+
+**注意**：非诊断步骤（Delay）不在 Expected Output 中列出，禁止使用 `--` 占位。
 
 #### 特殊规则
 
@@ -173,25 +216,39 @@
 
 #### 测试步骤模板
 
-**Boot 正向（代表性 DID）**
+**⚠️ test_procedure 中只写 Send/Delay/Set 操作，绝对不要写 Check 语句！**
+
+**Boot Programming Session 正向（代表性 DID）**
 ```
-1. Send DiagBy[Physical]Data[10 01]
+1. Send DiagBy[Physical]Data[10 01];
 2. Delay[1000]ms;
-3. Send DiagBy[Physical]Data[10 03]
-4. Send DiagBy[Physical]Data[10 02]
-5. (如需回到 Boot Default: Send DiagBy[Physical]Data[10 01])
+3. Send DiagBy[Physical]Data[10 03];
+4. Send DiagBy[Physical]Data[31 01 02 03];
+5. Send DiagBy[Physical]Data[10 02];
 6. Send DiagBy[Physical]Data[22 <DID_H> <DID_L>];
 ```
 
-#### Check 规则
+**Boot Default Session 正向（代表性 DID）**
+```
+1. Send DiagBy[Physical]Data[10 01];
+2. Send DiagBy[Physical]Data[22 <DID_H> <DID_L>];
+```
 
-- Boot 正向：`Check DiagData[62 <DID_H> <DID_L> <DataContent>]Within[50]ms;`
+#### Check 规则（expected_output）
 
-#### 特殊规则
+**Boot Programming Session 正向：**
+- 第 1 步：`Check DiagData[50 01 <P2_H> <P2_L> <P2*_H> <P2*_L>]Within[50]ms;`
+- 第 2 步：不写 Check（Delay 为非诊断操作）
+- 第 3 步：`Check DiagData[50 03 <P2_H> <P2_L> <P2*_H> <P2*_L>]Within[50]ms;`
+- 第 4 步：`Check DiagData[71 01 02 03 00]Within[50]ms;`
+- 第 5 步：`Check DiagData[50 02 <P2_H> <P2_L> <P2*_H> <P2*_L>]Within[50]ms;`
+- 第 6 步：`Check DiagData[62 <DID_H> <DID_L> <DataContent>]Within[50]ms;`
 
-1. Boot 域的 DID 列表从 BootServices 表读取，但只选取 5-8 个代表性 DID
-2. 代表性 DID 选择原则：覆盖 System DID（如 F197、F189、F180）+ 供应商 DID（如 F18A）+ 其他类型
-3. Boot 域支持的会话可能包含 Programming Session（与 APP 域不同）
+**Boot Default Session 正向：**
+- 第 1 步：`Check DiagData[50 01 <P2_H> <P2_L> <P2*_H> <P2*_L>]Within[50]ms;`
+- 第 2 步：`Check DiagData[62 <DID_H> <DID_L> <DataContent>]Within[50]ms;`
+
+**注意**：非诊断步骤（Delay）不在 Expected Output 中列出，禁止使用 `--` 占位。
 
 ---
 
@@ -211,9 +268,19 @@
 
 #### 测试步骤模板
 
+**⚠️ test_procedure 中只写 Send/Delay/Set 操作，绝对不要写 Check 语句！AndCheckResp 步骤除外。**
+
+**APP Default Session**
 ```
-1. 进入支持的会话
+1. Send DiagBy[Physical]Data[10 01];
 2. Send DIDTraversalBy[Physical]Service[0x22]Excluding[<AllSupportedDIDList>]AndCheckResp[0x31];
+```
+
+**APP Extended Session**
+```
+1. Send DiagBy[Physical]Data[10 01];
+2. Send DiagBy[Physical]Data[10 03];
+3. Send DIDTraversalBy[Physical]Service[0x22]Excluding[<AllSupportedDIDList>]AndCheckResp[0x31];
 ```
 
 其中：
@@ -221,11 +288,16 @@
   - 示例：`F1 86 F1 87 F1 88 F1 89 F1 90 F1 91 F1 92 F1 93 ...`
 - Boot 版本的 Excluding 列表使用 Boot 域的 DID 列表（仅生成 Default Session 1 条）
 
-#### Check 规则
+#### Check 规则（expected_output）
 
-- 第 1 步：检查进入会话的正响应
-- 第 2 步：不单独写 Expected Output（AndCheckResp 已内含检查）
-  - 遍历不支持的 DID → `7F 22 31`
+**APP Default Session：**
+- 第 1 步：`Check DiagData[50 01 <P2_H> <P2_L> <P2*_H> <P2*_L>]Within[50]ms;`
+- 第 2 步：不写 Check（AndCheckResp 内含检查，遍历不支持的 DID → `7F 22 31`）
+
+**APP Extended Session：**
+- 第 1 步：`Check DiagData[50 01 <P2_H> <P2_L> <P2*_H> <P2*_L>]Within[50]ms;`
+- 第 2 步：`Check DiagData[50 03 <P2_H> <P2_L> <P2*_H> <P2*_L>]Within[50]ms;`
+- 第 3 步：不写 Check（AndCheckResp 内含检查）
 
 #### 特殊规则
 
@@ -254,28 +326,48 @@ Boot 域加前缀 `Boot `。每个会话独立生成一对用例。
 
 #### 测试步骤模板
 
+**⚠️ test_procedure 中只写 Send/Delay/Set 操作，绝对不要写 Check 语句！**
+
 选择一个代表性可读 DID（如 F1 86）进行测试。
 
-**前置步骤：** 进入对应会话（按标准路径）
-
-**A. SF_DL > 3**
+**Default Session — SF_DL > 3**
 ```
-Send DiagBy[Physical]Data[22 F1 86]WithLen[4];
-```
-
-**B. SF_DL < 3**
-```
-Send DiagBy[Physical]Data[22 F1]WithLen[2];
+1. Send DiagBy[Physical]Data[10 01];
+2. Send DiagBy[Physical]Data[22 F1 86]WithLen[4];
 ```
 
-APP 域在 Default 和 Extended 会话下分别生成；Boot 域仅在 Default Session 下生成。Boot 域的进入路径使用 Boot 标准路径。
+**Default Session — SF_DL < 3**
+```
+1. Send DiagBy[Physical]Data[10 01];
+2. Send DiagBy[Physical]Data[22 F1]WithLen[2];
+```
 
-#### Check 规则
+**Extended Session — SF_DL > 3**
+```
+1. Send DiagBy[Physical]Data[10 01];
+2. Send DiagBy[Physical]Data[10 03];
+3. Send DiagBy[Physical]Data[22 F1 86]WithLen[4];
+```
 
-| 错误类型 | Expected Output |
-|---------|----------------|
-| SF_DL > 3 | `Check DiagData[7F 22 13]Within[50]ms;` |
-| SF_DL < 3 | `Check DiagData[7F 22 13]Within[50]ms;` |
+**Extended Session — SF_DL < 3**
+```
+1. Send DiagBy[Physical]Data[10 01];
+2. Send DiagBy[Physical]Data[10 03];
+3. Send DiagBy[Physical]Data[22 F1]WithLen[2];
+```
+
+APP 域在 Default 和 Extended 会话下分别生成；Boot 域仅在 Default Session 下生成。
+
+#### Check 规则（expected_output）
+
+**Default Session — SF_DL 错误：**
+- 第 1 步：`Check DiagData[50 01 <P2_H> <P2_L> <P2*_H> <P2*_L>]Within[50]ms;`
+- 第 2 步：`Check DiagData[7F 22 13]Within[50]ms;`
+
+**Extended Session — SF_DL 错误：**
+- 第 1 步：`Check DiagData[50 01 <P2_H> <P2_L> <P2*_H> <P2*_L>]Within[50]ms;`
+- 第 2 步：`Check DiagData[50 03 <P2_H> <P2_L> <P2*_H> <P2*_L>]Within[50]ms;`
+- 第 3 步：`Check DiagData[7F 22 13]Within[50]ms;`
 
 #### 特殊规则
 
@@ -311,21 +403,35 @@ APP 域在 Default 和 Extended 会话下分别生成；Boot 域仅在 Default S
 - APP：`<SessionName> Session NRC priority test for service 0x22`
 - Boot：`Boot <SessionName> Session NRC priority test for service 0x22`
 
-#### 测试步骤
+#### 测试步骤模板
+
+**⚠️ test_procedure 中只写 Send/Delay/Set 操作，绝对不要写 Check 语句！**
 
 在对应会话下，发送长度错误的 0x22 请求（如 SF_DL < 3），验证 ECU 优先返回 NRC 0x13 而非其他 NRC。
 
+**Default Session**
 ```
-1. 进入目标会话（按标准路径）
+1. Send DiagBy[Physical]Data[10 01];
 2. Send DiagBy[Physical]Data[22 F1]WithLen[2];
 ```
 
-#### Check 规则
+**Extended Session**
+```
+1. Send DiagBy[Physical]Data[10 01];
+2. Send DiagBy[Physical]Data[10 03];
+3. Send DiagBy[Physical]Data[22 F1]WithLen[2];
+```
 
-```
-1. Check DiagData[<Session Positive Response>]Within[50]ms;
-2. Check DiagData[7F 22 13]Within[50]ms;
-```
+#### Check 规则（expected_output）
+
+**Default Session：**
+- 第 1 步：`Check DiagData[50 01 <P2_H> <P2_L> <P2*_H> <P2*_L>]Within[50]ms;`
+- 第 2 步：`Check DiagData[7F 22 13]Within[50]ms;`
+
+**Extended Session：**
+- 第 1 步：`Check DiagData[50 01 <P2_H> <P2_L> <P2*_H> <P2*_L>]Within[50]ms;`
+- 第 2 步：`Check DiagData[50 03 <P2_H> <P2_L> <P2*_H> <P2*_L>]Within[50]ms;`
+- 第 3 步：`Check DiagData[7F 22 13]Within[50]ms;`
 
 #### 特殊规则
 
@@ -359,23 +465,31 @@ APP 域在 Default 和 Extended 会话下分别生成；Boot 域仅在 Default S
 
 ## DID 数据填充规则
 
-**核心要求：预期输出中的数据必须尽可能精确，尽量减少 xx 占位符的使用。**
+**核心要求：预期输出中的数据必须尽可能精确，尽量减少 xx 占位符的使用。Session 正响应时序参数按共享规则的编码公式计算实际值，绝对禁止使用 `XX XX XX XX`。**
 
 优先级从高到低：
 
 | 优先级 | 场景 | 填充方式 | 说明 |
 |--------|------|---------|------|
 | 1 | DID 数据为固定值 | 使用实际值 | 如 F186=当前会话号(01/03)，F160=01 |
-| 2 | DID 有定义 DefaultValue | 使用 DefaultValue | 从 DID 表的 DefaultValue 列读取，如 F197="HOD"，F18A="8DR" |
-| 3 | DID 有 Default value(Phy.) | 使用物理默认值 | 从参数表转换为 HEX 填充 |
-| 4 | DID 数据为可变值且无默认值 | 使用 xx 占位 | 最后手段，仅当确实无法获取精确值时使用 |
+| 2 | DID 有定义 DefaultValue（文本） | 字符串逐字节转 HEX | 如 F197="HOD" → `48 4F 44`，F18A="8DR" → `38 44 52` |
+| 3 | DID 有 Default value(Phy.)（数值） | 数值按 Data Type 转 HEX | 如 F010 Default=0, ByteLen=4 → `00 00 00 00` |
+| 4 | DID 参数表的 Comment 含初始值 | 从 Comment 提取并转换 | 如 "Initial value: 0x20,0x20" → `20 20` |
+| 5 | DID 数据为可变值且无任何默认值 | 使用 xx 占位 | **最后手段**，仅当确实无法获取任何精确值时使用 |
+
+**⚠️ 数值默认值转换规则（重要）：**
+- `type=linear unsigned` 且 Default Value(Phy)=0, Byte Length=4 → 4 字节零值：`00 00 00 00`
+- `type=linear unsigned` 且 Default Value(Phy)=0, Byte Length=2 → 2 字节零值：`00 00`
+- `type=identical` 且 Default Value(Phy)=0 → 对应字节长度的零值
+- **数值 0 的默认值不是 xx！必须转换为对应字节长度的 00 填充！**
+- 公式 `k=1, b=0, n=1, pre=0` 表示物理值 = HEX 值（直接相等）
 
 **重要规则**：
-- ASCII 类型 DID：如果有默认值，将 ASCII 字符串逐字节转换为 HEX（如 "HOD" → `48 4F 44`）
-- 数值类型 DID：如果有默认值，按 Data Type 和 Formula 转换为 HEX
+- ASCII 类型 DID：将字符串逐字节转换为 HEX（如 "HOD" → `48 4F 44`），不足 Byte Length 用 `20`（空格）填充
+- 数值类型 DID：按 Data Type 和 Formula 计算 HEX 值，按 Byte Length 填充
 - BCD 类型 DID：使用 BCD 编码填充
 - 如果参数表中有多个子行（同一 DID 多个字节定义），每个字节按子行定义分别填充
-- **数据长度必须精确匹配 DID 的 Byte Length**，xx 的数量 = Byte Length - 已知字节数
+- **数据长度必须精确匹配 DID 的 Byte Length**
 
 ---
 
