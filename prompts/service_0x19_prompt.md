@@ -69,49 +69,68 @@
 
 #### 测试步骤模板
 
-**A. 当前会话不支持 0x19 服务（负向）**
+**⚠️ test_procedure 中只写 Send/Delay/Stop/Resume 操作，绝对不要写 Check 语句！步骤编号严格使用 `N. ` 格式，禁止使用 `StepN:` 格式。**
+
+**A. 当前会话不支持 0x19 服务 — Default 会话（负向）**
 ```
-1. 进入 <CurrentSessionNotSupport>（通常为 Default）
+1. Send DiagBy[Physical]Data[10 01];
 2. Send DiagBy[Physical]Data[19 <RepSub> <DTCStatusMask>];
 ```
 
-**B. 支持子功能正向（需 DTC 数据的子功能）**
+**B. 支持子功能正向（需 DTC 数据）— Extended 会话**
 ```
-1. 进入 <CurrentSessionSupport>（通常为 Extended）
-2. Stop MsgCycle[<FaultMsgId>];
-3. Delay[3000]ms;
-4. Send DiagBy[Physical]Data[19 <Sub> <DTCStatusMask>];
-5. Send MsgCycle[<FaultMsgId>];
-```
-
-**C. 支持子功能正向（不需 DTC 数据的子功能如 0x01/0x0A）**
-```
-1. 进入 <CurrentSessionSupport>（通常为 Extended）
-2. Send DiagBy[Physical]Data[19 <Sub> <DTCStatusMask>];
+1. Send DiagBy[Physical]Data[10 01];
+2. Send DiagBy[Physical]Data[10 03];
+3. Stop MsgCycle[<FaultMsgId>];
+4. Delay[3000]ms;
+5. Send DiagBy[Physical]Data[19 <Sub> <DTCStatusMask>];
+6. Send MsgCycle[<FaultMsgId>];
 ```
 
-**D. 子功能不支持（负向）**
+**C. 支持子功能正向（不需 DTC 数据如 0x01/0x0A）— Extended 会话**
 ```
-1. 进入 <CurrentSessionSupport>（通常为 Extended）
-2. Send DiagBy[Physical]Data[19 <UnsupportedSub> <DTCStatusMask>];
+1. Send DiagBy[Physical]Data[10 01];
+2. Send DiagBy[Physical]Data[10 03];
+3. Send DiagBy[Physical]Data[19 <Sub> <DTCStatusMask>];
 ```
 
-#### Check 规则
+**D. 子功能不支持（负向）— Extended 会话**
+```
+1. Send DiagBy[Physical]Data[10 01];
+2. Send DiagBy[Physical]Data[10 03];
+3. Send DiagBy[Physical]Data[19 <UnsupportedSub> <DTCStatusMask>];
+```
 
-**A. 当前会话不支持服务：**
-- `Check DiagData[7F 19 7F]Within[50]ms;`
+#### Check 规则（expected_output）
 
-**B. 支持子功能正向（有 DTC 数据）：**
-- 0x01: `Check DiagData[59 01 <AvailabilityMask> <N_DTC_H> <N_DTC_L>]Within[50]ms;`
-- 0x02: `Check DiagData[59 02 <AvailabilityMask> <DTC_H> <DTC_M> <DTC_L> <Status>]Within[50]ms;`
-- 0x04: `Check DiagData[59 04 <DTC_3bytes> <Status> <RecordNum> <SnapshotData>]Within[50]ms;`
-- 0x06: `Check DiagData[59 06 <DTC_3bytes> <Status> <RecordNum> <ExtData>]Within[50]ms;`
+**A. 当前会话不支持服务（Default 会话）：**
+- 第 1 步：`Check DiagData[50 01 <P2_H> <P2_L> <P2*_H> <P2*_L>]Within[50]ms;`
+- 第 2 步：`Check DiagData[7F 19 7F]Within[50]ms;`
 
-**C. 支持子功能正向（无 DTC 数据）：**
-- 0x0A: `Check DiagData[59 0A <DTCStatusAvailabilityMask> <DTC_3bytes> <Status> ...]Within[50]ms;`
+**B. 支持子功能正向（需 DTC 数据，Extended 会话）：**
+- 第 1 步：`Check DiagData[50 01 <P2_H> <P2_L> <P2*_H> <P2*_L>]Within[50]ms;`
+- 第 2 步：`Check DiagData[50 03 <P2_H> <P2_L> <P2*_H> <P2*_L>]Within[50]ms;`
+- 第 3-4 步：不写 Check（Stop MsgCycle/Delay 为非诊断操作）
+- 第 5 步按子功能区分：
+  - 0x01: `Check DiagData[59 01 <AvailabilityMask> <N_DTC_H> <N_DTC_L>]Within[50]ms;`
+  - 0x02: `Check DiagData[59 02 <AvailabilityMask> <DTC_H> <DTC_M> <DTC_L> <Status>]Within[50]ms;`
+  - 0x04: `Check DiagData[59 04 <DTC_3bytes> <Status> <RecordNum> <SnapshotData>]Within[50]ms;`
+  - 0x06: `Check DiagData[59 06 <DTC_3bytes> <Status> <RecordNum> <ExtData>]Within[50]ms;`
+- 第 6 步：不写 Check（Send MsgCycle 为非诊断操作）
 
-**D. 子功能不支持：**
-- `Check DiagData[7F 19 12]Within[50]ms;`
+**C. 支持子功能正向（不需 DTC 数据，Extended 会话）：**
+- 第 1 步：`Check DiagData[50 01 <P2_H> <P2_L> <P2*_H> <P2*_L>]Within[50]ms;`
+- 第 2 步：`Check DiagData[50 03 <P2_H> <P2_L> <P2*_H> <P2*_L>]Within[50]ms;`
+- 第 3 步：
+  - 0x01: `Check DiagData[59 01 <AvailabilityMask> <N_DTC_H> <N_DTC_L>]Within[50]ms;`
+  - 0x0A: `Check DiagData[59 0A <DTCStatusAvailabilityMask> <DTC_3bytes> <Status> ...]Within[50]ms;`
+
+**D. 子功能不支持（Extended 会话）：**
+- 第 1 步：`Check DiagData[50 01 <P2_H> <P2_L> <P2*_H> <P2*_L>]Within[50]ms;`
+- 第 2 步：`Check DiagData[50 03 <P2_H> <P2_L> <P2*_H> <P2*_L>]Within[50]ms;`
+- 第 3 步：`Check DiagData[7F 19 12]Within[50]ms;`
+
+**注意**：非诊断操作步骤（Stop MsgCycle、Delay、Send MsgCycle）不在 Expected Output 中列出，**禁止使用 `--` 占位**。
 
 #### 特殊规则
 
@@ -121,6 +140,8 @@
 4. 若 DTC 快照表为空，0x04 子功能可能返回空数据
 5. 有 DTC 数据的子功能（0x02/0x04/0x06）需先制造故障再读取
 6. 无 DTC 数据的子功能（0x01/0x0A）可直接读取
+7. **test_procedure 中只写操作（Send/Delay/Stop/Resume），绝对禁止写 Check**
+8. **步骤编号严格使用 `N. ` 格式，禁止使用 `StepN:` 格式**
 
 ---
 
@@ -140,9 +161,19 @@
 
 #### 测试步骤模板
 
+**⚠️ test_procedure 中只写 Send 操作，步骤编号严格使用 `N. ` 格式，禁止使用 `StepN:` 格式。**
+
+**Default 会话：**
 ```
-1. 进入 <CurrentSession>
+1. Send DiagBy[Physical]Data[10 01];
 2. Send DiagBy[Physical]Data[19 <0x80 + Sub> <DTCStatusMask>];
+```
+
+**Extended 会话：**
+```
+1. Send DiagBy[Physical]Data[10 01];
+2. Send DiagBy[Physical]Data[10 03];
+3. Send DiagBy[Physical]Data[19 <0x80 + Sub> <DTCStatusMask>];
 ```
 
 例如：
@@ -150,9 +181,16 @@
 - `19 82 FF`（0x02 + suppress bit）
 - `19 8A`（0x0A + suppress bit）
 
-#### Check 规则
+#### Check 规则（expected_output）
 
+**Default 会话：**
+- 第 1 步：`Check DiagData[50 01 <P2_H> <P2_L> <P2*_H> <P2*_L>]Within[50]ms;`
 - 第 2 步：`Check DiagData[7F 19 12]Within[50]ms;`
+
+**Extended 会话：**
+- 第 1 步：`Check DiagData[50 01 <P2_H> <P2_L> <P2*_H> <P2*_L>]Within[50]ms;`
+- 第 2 步：`Check DiagData[50 03 <P2_H> <P2_L> <P2*_H> <P2*_L>]Within[50]ms;`
+- 第 3 步：`Check DiagData[7F 19 12]Within[50]ms;`
 
 #### 特殊规则
 
@@ -190,9 +228,11 @@
 
 #### 测试步骤模板
 
+**⚠️ test_procedure 中只写 Send/Delay/Set/Stop/Resume 操作，绝对不要写 Check 语句！步骤编号严格使用 `N. ` 格式，禁止使用 `StepN:` 格式。**
+
 **A. 故障活跃态（t-09）：**
 ```
-1. 进入 Default 会话
+1. Send DiagBy[Physical]Data[10 01];
 2. <DTC_FaultInjection_Method>
 3. Delay[<FaultActivation_Delay>]ms;
 4. Send DiagBy[Physical]Data[19 02 FF];
@@ -202,7 +242,7 @@
 
 **B. 故障恢复态（t-08）：**
 ```
-1. 进入 Default 会话
+1. Send DiagBy[Physical]Data[10 01];
 2. <DTC_FaultInjection_Method>
 3. Delay[<FaultActivation_Delay>]ms;
 4. Send DiagBy[Physical]Data[19 02 FF];
@@ -218,25 +258,38 @@
 其中：
 - `<DTC_FaultInjection_Method>` = 每个 DTC 的具体故障注入方式，从输入表 DTC 列读取
   - 电压类：`Set Voltage[7.5]V`（欠压）/ `Set Voltage[17.5]V`（过压）
-  - 信号类：`Steering wheel left zone MAT open circuit`（实际测试中使用对应信号操作）
-  - 通讯类：`Set LIN BIT-ERROR` / `Set LIN CHECKSUM-ERROR` 等
+  - 通讯类：`Stop SendMsg[<MsgId>]`（通讯丢失）/ `Set LIN BIT-ERROR`
 - `<DTC_FaultRecovery_Method>` = 故障恢复操作
+  - 电压类：`Set Voltage[13.5]V`
+  - 通讯类：`Resume SendMsg[<MsgId>]`
 - `<FaultActivation_Delay>` = 故障生效延时（通常 150-550ms，按 DTC 特性调整）
 - `<ReadInterval>` = 读取间隔（通常 60-70ms）
 - `<Recovery_Delay>` = 恢复延时（通常 150-450ms）
 
-#### Check 规则
+#### Check 规则（expected_output）
 
 **A. 故障活跃态（t-09）：**
+- 第 1 步：`Check DiagData[50 01 <P2_H> <P2_L> <P2*_H> <P2*_L>]Within[50]ms;`
+- 第 2 步：不写 Check（故障注入为非诊断操作）
+- 第 3 步：不写 Check（Delay 为非诊断操作）
 - 第 4 步：`Check DiagData[59 02 09 00 00 00 00]Within[200]ms;`（故障尚未触发，可能返回空）
+- 第 5 步：不写 Check（Delay 为非诊断操作）
 - 第 6 步：`Check DiagData[59 02 09 <DTC_H> <DTC_M> <DTC_L> 09]Within[200]ms;`（故障已触发，status=0x09）
 
 **B. 故障恢复态（t-08）：**
+- 第 1 步：`Check DiagData[50 01 <P2_H> <P2_L> <P2*_H> <P2*_L>]Within[50]ms;`
+- 第 2 步：不写 Check（故障注入为非诊断操作）
+- 第 3 步：不写 Check（Delay 为非诊断操作）
 - 第 4 步：`Check DiagData[59 02 FF <DTC_H> <DTC_M> <DTC_L> 09]Within[200]ms;`（故障活跃中）
+- 第 5 步：不写 Check（故障恢复为非诊断操作）
+- 第 6 步：不写 Check（Delay 为非诊断操作）
 - 第 7 步：`Check DiagData[59 02 FF <DTC_H> <DTC_M> <DTC_L> 09]Within[200]ms;`（仍活跃）
+- 第 8 步：不写 Check（Delay 为非诊断操作）
 - 第 9 步：`Check DiagData[59 02 FF <DTC_H> <DTC_M> <DTC_L> 08]Within[200]ms;`（已恢复，status=0x08）
 - 第 10 步：`Check DiagData[54]Within[200]ms;`（清除 DTC）
 - 第 11 步：`Check DiagData[59 02 FF 00 00 00 00]Within[200]ms;`（清除后为空）
+
+**注意**：非诊断操作步骤（Set Voltage、Delay、Stop SendMsg、Resume SendMsg）不在 Expected Output 中列出，**禁止使用 `--` 占位**。
 
 #### 特殊规则
 
@@ -244,12 +297,229 @@
 2. **同一个 DTC 号的不同故障类型**（如 LIN 通讯的 BIT-ERROR / CHECKSUM-ERROR / PARITY-ERROR）各生成独立用例
 3. DTC 编号从 DTC 表读取，为 3 字节（如 `5D 83 13`）
 4. 故障注入方法从 DTC 表或项目定义的故障列表中读取
-5. **参考模板统一在 Default 会话下测试**，不切换到 Extended
+5. **在 Default 会话下测试**，不切换到 Extended
 6. 响应超时使用 `Within[200]ms`（比常规 50ms 更长），因为故障注入后 ECU 处理可能延迟
+7. **test_procedure 中只写操作，绝对禁止写 Check；步骤编号严格使用 `N. ` 格式**
 
 ---
 
-### 分类 4: Incorrect Diagnostic Command Test
+### 分类 4: Supply Voltage Fault Injection Test
+
+#### 用例数量规则
+
+**从 DTC 表提取所有电压相关 DTC（Failure Criteria 涉及电压阈值的 DTC），为每个电压 DTC 生成 2 条用例。**
+
+| 状态 | 数量 | 说明 |
+|------|------|------|
+| t-09（故障活跃态） | N_voltage_dtc | status=0x09（电压故障触发后确认） |
+| t-08（故障恢复态） | N_voltage_dtc | status=0x08（电压恢复后确认） |
+
+**总数 = N_voltage_dtc × 2**
+
+其中 N_voltage_dtc = DTC 表中 Failure Criteria 涉及电压阈值（过压/欠压）且 Support=Y 的 DTC 数量。
+
+> **关键规则**：电压类 DTC 必须使用 `Set Voltage[...]V` 进行故障注入，不得使用其他方法替代。
+
+#### 用例命名规则
+
+- 活跃态：`<DTCFaultDescription> t-09 voltage fault\nDTC:<DTC_Hex>`
+- 恢复态：`<DTCFaultDescription> t-08 voltage recovery\nDTC:<DTC_Hex>`
+
+示例：
+- `Power supply over voltage t-09 voltage fault\nDTC:0x800117`
+- `Power supply over voltage t-08 voltage recovery\nDTC:0x800117`
+
+#### 电压故障注入方法速查
+
+| DTC 类型 | 故障注入方法 | 触发阈值 | 恢复方法 | 恢复阈值 |
+|----------|-------------|---------|---------|---------|
+| 过压（Over Voltage） | `Set Voltage[17.5]V` | ≥16.5V | `Set Voltage[13.5]V` | ≤16V |
+| 欠压（Under Voltage） | `Set Voltage[7.5]V` | ≤8.5V | `Set Voltage[12.0]V` | ≥9V |
+
+> **注意**：具体的电压 DTC 阈值以 DTC 表中 Failure Criteria 列写的数值为准。若 DTC 表中标注的阈值与上表不同，以 DTC 表为准。
+
+#### 测试步骤模板
+
+**⚠️ test_procedure 中只写 Send/Delay/Set 操作，绝对不要写 Check 语句！步骤编号严格使用 `N. ` 格式，禁止使用 `StepN:` 格式。**
+
+**A. 电压故障活跃态（t-09）：**
+```
+1. Send DiagBy[Physical]Data[10 01];
+2. Set Voltage[<FaultVoltage>]V;
+3. Delay[<FaultActivation_Delay>]ms;
+4. Send DiagBy[Physical]Data[19 02 FF];
+5. Set Voltage[<RecoveryVoltage>]V;
+6. Delay[<Recovery_Delay>]ms;
+7. Send DiagBy[Physical]Data[19 02 FF];
+```
+
+**B. 电压故障恢复态（t-08）：**
+```
+1. Send DiagBy[Physical]Data[10 01];
+2. Set Voltage[<FaultVoltage>]V;
+3. Delay[<FaultActivation_Delay>]ms;
+4. Send DiagBy[Physical]Data[19 02 FF];
+5. Set Voltage[<RecoveryVoltage>]V;
+6. Delay[<Recovery_Delay>]ms;
+7. Send DiagBy[Physical]Data[19 02 FF];
+8. Delay[<Aging_Delay>]ms;
+9. Send DiagBy[Physical]Data[19 02 FF];
+10. Send DiagBy[Physical]Data[14 FF FF FF];
+11. Send DiagBy[Physical]Data[19 02 FF];
+```
+
+其中：
+- `<FaultVoltage>` = 故障触发电压（过压场景用 17.5V，欠压场景用 7.5V）
+- `<RecoveryVoltage>` = 正常恢复电压（通常 13.5V）
+- `<FaultActivation_Delay>` = 故障生效延时（根据 DTC 表中 Monitor Rate 和故障确认周期计算）
+- `<Recovery_Delay>` = 恢复延时（通常 2000ms）
+- `<Aging_Delay>` = DTC 老化延时（通常 2000ms）
+
+#### Check 规则（expected_output）
+
+**A. 电压故障活跃态（t-09）：**
+- 第 1 步：`Check DiagData[50 01 <P2_H> <P2_L> <P2*_H> <P2*_L>]Within[50]ms;`
+- 第 2-3 步：不写 Check（Set Voltage/Delay 为非诊断操作）
+- 第 4 步：`Check DiagData[59 02 09 <DTC_H> <DTC_M> <DTC_L> 09]Within[200]ms;`（故障已触发）
+- 第 5-6 步：不写 Check（Set Voltage/Delay 为非诊断操作）
+- 第 7 步：`Check DiagData[59 02 09 <DTC_H> <DTC_M> <DTC_L> 08]Within[200]ms;`（电压恢复后变为 08）
+
+**B. 电压故障恢复态（t-08）：**
+- 第 1 步：`Check DiagData[50 01 <P2_H> <P2_L> <P2*_H> <P2*_L>]Within[50]ms;`
+- 第 2-3 步：不写 Check（Set Voltage/Delay 为非诊断操作）
+- 第 4 步：`Check DiagData[59 02 09 <DTC_H> <DTC_M> <DTC_L> 09]Within[200]ms;`
+- 第 5-6 步：不写 Check（Set Voltage/Delay 为非诊断操作）
+- 第 7 步：`Check DiagData[59 02 09 <DTC_H> <DTC_M> <DTC_L> 08]Within[200]ms;`
+- 第 8 步：不写 Check（Delay 为非诊断操作）
+- 第 9 步：`Check DiagData[59 02 09 <DTC_H> <DTC_M> <DTC_L> 08]Within[200]ms;`（确认 DTC 仍为 08）
+- 第 10 步：`Check DiagData[54]Within[200]ms;`（清除 DTC）
+- 第 11 步：`Check DiagData[59 02 09 00 00 00 00]Within[200]ms;`（清除后无 DTC）
+
+**注意**：非诊断步骤（Set Voltage、Delay）不在 Expected Output 中列出，**禁止使用 `--` 占位**。
+
+---
+
+### 分类 5: Supply Voltage Boundary Test
+
+#### 用例数量规则
+
+**固定 4 条**，覆盖电压边界场景。即使 DTC 表中无电压相关 DTC，也须生成（验证 ECU 在边界电压下的正常工作能力）。
+
+| 序号 | 场景 | 电压值 | 预期结果 |
+|------|------|--------|---------|
+| 1 | 正常工作下限边界 | 9.0V | 无 DTC 触发，0x19 正常响应 |
+| 2 | 欠压阈值边界 | 8.5V | DTC 触发，status=0x09 |
+| 3 | 正常工作上限边界 | 16.0V | 无 DTC 触发，0x19 正常响应 |
+| 4 | 过压阈值边界 | 16.5V | DTC 触发，status=0x09 |
+
+> **注意**：若 DTC 表中实际电压阈值不同于上述默认值（8.5V/16.5V），以 DTC 表为准。边界测试的电压值 = DTC 表中 Failure Criteria 标注的阈值电压。
+
+#### 用例命名规则
+
+1. `Supply voltage lower boundary 9.0V no DTC`
+2. `Supply voltage under-voltage threshold boundary DTC`
+3. `Supply voltage upper boundary 16.0V no DTC`
+4. `Supply voltage over-voltage threshold boundary DTC`
+
+#### 测试步骤模板
+
+**⚠️ test_procedure 中只写 Send/Delay/Set 操作，绝对不要写 Check 语句！步骤编号严格使用 `N. ` 格式，禁止使用 `StepN:` 格式。**
+
+**A. 下限边界 — 无 DTC（9.0V）：**
+```
+1. Send DiagBy[Physical]Data[10 01];
+2. Set Voltage[9.0]V;
+3. Delay[3000]ms;
+4. Send DiagBy[Physical]Data[19 02 FF];
+5. Send DiagBy[Physical]Data[19 01 FF];
+6. Set Voltage[13.5]V;
+7. Delay[1000]ms;
+```
+
+**B. 欠压阈值边界 — 触发 DTC（8.5V）：**
+```
+1. Send DiagBy[Physical]Data[10 01];
+2. Set Voltage[8.5]V;
+3. Delay[3000]ms;
+4. Send DiagBy[Physical]Data[19 02 FF];
+5. Send DiagBy[Physical]Data[19 01 FF];
+6. Set Voltage[13.5]V;
+7. Delay[3000]ms;
+8. Send DiagBy[Physical]Data[19 02 FF];
+9. Send DiagBy[Physical]Data[14 FF FF FF];
+```
+
+**C. 上限边界 — 无 DTC（16.0V）：**
+```
+1. Send DiagBy[Physical]Data[10 01];
+2. Set Voltage[16.0]V;
+3. Delay[3000]ms;
+4. Send DiagBy[Physical]Data[19 02 FF];
+5. Send DiagBy[Physical]Data[19 01 FF];
+6. Set Voltage[13.5]V;
+7. Delay[1000]ms;
+```
+
+**D. 过压阈值边界 — 触发 DTC（16.5V）：**
+```
+1. Send DiagBy[Physical]Data[10 01];
+2. Set Voltage[16.5]V;
+3. Delay[3000]ms;
+4. Send DiagBy[Physical]Data[19 02 FF];
+5. Send DiagBy[Physical]Data[19 01 FF];
+6. Set Voltage[13.5]V;
+7. Delay[3000]ms;
+8. Send DiagBy[Physical]Data[19 02 FF];
+9. Send DiagBy[Physical]Data[14 FF FF FF];
+```
+
+#### Check 规则（expected_output）
+
+**A. 下限边界 — 无 DTC（9.0V）：**
+- 第 1 步：`Check DiagData[50 01 <P2_H> <P2_L> <P2*_H> <P2*_L>]Within[50]ms;`
+- 第 2-3 步：不写 Check（Set Voltage/Delay 为非诊断操作）
+- 第 4 步：`Check DiagData[59 02 09]Within[200]ms;`（仅 AvailabilityMask，无 DTC 数据）
+- 第 5 步：`Check DiagData[59 01 09 00 00]Within[200]ms;`（DTC 数量为 0）
+- 第 6-7 步：不写 Check（Set Voltage/Delay 为非诊断操作）
+
+**B. 欠压阈值边界 — 触发 DTC（8.5V）：**
+- 第 1 步：`Check DiagData[50 01 <P2_H> <P2_L> <P2*_H> <P2*_L>]Within[50]ms;`
+- 第 2-3 步：不写 Check（Set Voltage/Delay 为非诊断操作）
+- 第 4 步：`Check DiagData[59 02 09 80 01 16 09]Within[200]ms;`（欠压 DTC 已触发，DTC 编号以 DTC 表为准）
+- 第 5 步：`Check DiagData[59 01 09 00 01]Within[200]ms;`（DTC 数量为 1）
+- 第 6-7 步：不写 Check（Set Voltage/Delay 为非诊断操作）
+- 第 8 步：`Check DiagData[59 02 09 80 01 16 08]Within[200]ms;`（电压恢复后变为 08）
+- 第 9 步：`Check DiagData[54]Within[200]ms;`
+
+**C. 上限边界 — 无 DTC（16.0V）：**
+- 第 1 步：`Check DiagData[50 01 <P2_H> <P2_L> <P2*_H> <P2*_L>]Within[50]ms;`
+- 第 2-3 步：不写 Check（Set Voltage/Delay 为非诊断操作）
+- 第 4 步：`Check DiagData[59 02 09]Within[200]ms;`（仅 AvailabilityMask，无 DTC 数据）
+- 第 5 步：`Check DiagData[59 01 09 00 00]Within[200]ms;`（DTC 数量为 0）
+- 第 6-7 步：不写 Check（Set Voltage/Delay 为非诊断操作）
+
+**D. 过压阈值边界 — 触发 DTC（16.5V）：**
+- 第 1 步：`Check DiagData[50 01 <P2_H> <P2_L> <P2*_H> <P2*_L>]Within[50]ms;`
+- 第 2-3 步：不写 Check（Set Voltage/Delay 为非诊断操作）
+- 第 4 步：`Check DiagData[59 02 09 80 01 17 09]Within[200]ms;`（过压 DTC 已触发，DTC 编号以 DTC 表为准）
+- 第 5 步：`Check DiagData[59 01 09 00 01]Within[200]ms;`（DTC 数量为 1）
+- 第 6-7 步：不写 Check（Set Voltage/Delay 为非诊断操作）
+- 第 8 步：`Check DiagData[59 02 09 80 01 17 08]Within[200]ms;`（电压恢复后变为 08）
+- 第 9 步：`Check DiagData[54]Within[200]ms;`
+
+**注意**：非诊断步骤（Set Voltage、Delay）不在 Expected Output 中列出，**禁止使用 `--` 占位**。
+
+#### 特殊规则
+
+1. **边界测试的电压值优先从 DTC 表读取**，若 DTC 表无明确阈值则使用默认值（9.0V / 8.5V / 16.0V / 16.5V）
+2. 非诊断步骤（Set Voltage、Delay）**不在 Expected Output 中列出**，**禁止使用 `--` 占位**
+3. DTC 编号以 DTC 表中对应电压故障的实际 DTC 号为准
+4. 0x19 01 用于验证 DTC 数量，0x19 02 用于验证具体 DTC 状态
+5. 边界测试完成后必须恢复电压到正常值（13.5V）并清除 DTC
+
+---
+
+### 分类 6: Incorrect Diagnostic Command Test
 #### 用例数量规则
 
 **固定 2 条 / 每种支持的寻址方式**
@@ -270,30 +540,39 @@
 
 #### 测试步骤模板
 
+**⚠️ test_procedure 中只写 Send 操作，绝对不要写 Check 语句！步骤编号严格使用 `N. ` 格式，禁止使用 `StepN:` 格式。**
+
 选择一个代表性子功能（优先 0x01）进行测试。
 
-**前置步骤：** 进入支持 0x19 的当前会话（通常 Extended 或 Default）
-
-**A. SF_DL > 合法值**
+**Extended Session — SF_DL > 合法值**
 ```
-Send DiagBy[<Addr>]Data[19 01]WithLen[5];
-```
-
-**B. SF_DL < 合法值**
-```
-Send DiagBy[<Addr>]Data[19 01]WithLen[1];
+1. Send DiagBy[Physical]Data[10 01];
+2. Send DiagBy[Physical]Data[10 03];
+3. Send DiagBy[Physical]Data[19 01]WithLen[5];
 ```
 
-#### Check 规则
+**Extended Session — SF_DL < 合法值**
+```
+1. Send DiagBy[Physical]Data[10 01];
+2. Send DiagBy[Physical]Data[10 03];
+3. Send DiagBy[Physical]Data[19 01]WithLen[1];
+```
 
-| 错误类型 | Expected Output |
-|---------|----------------|
-| SF_DL > 合法值 | `Check DiagData[7F 19 13]Within[50]ms;` |
-| SF_DL < 合法值 | `Check DiagData[7F 19 13]Within[50]ms;` |
+#### Check 规则（expected_output）
+
+**SF_DL > 合法值：**
+- 第 1 步：`Check DiagData[50 01 <P2_H> <P2_L> <P2*_H> <P2*_L>]Within[50]ms;`
+- 第 2 步：`Check DiagData[50 03 <P2_H> <P2_L> <P2*_H> <P2*_L>]Within[50]ms;`
+- 第 3 步：`Check DiagData[7F 19 13]Within[50]ms;`
+
+**SF_DL < 合法值：**
+- 第 1 步：`Check DiagData[50 01 <P2_H> <P2_L> <P2*_H> <P2*_L>]Within[50]ms;`
+- 第 2 步：`Check DiagData[50 03 <P2_H> <P2_L> <P2*_H> <P2*_L>]Within[50]ms;`
+- 第 3 步：`Check DiagData[7F 19 13]Within[50]ms;`
 
 ---
 
-### 分类 5: Functional Addressing Test
+### 分类 7: Functional Addressing Test
 
 #### 用例数量规则
 
@@ -342,9 +621,12 @@ Send DiagBy[<Addr>]Data[19 01]WithLen[1];
 3. **Session Layer 须测试多个 DTCStatusMask**（FF / 0x08 / 0x09），来自 GroupOfDTC 支持的 bit 位
 4. **不同子功能的合法 SF_DL 不同**，Incorrect Command 测试需标注合法值
 5. **DTC Read 必须按逐 DTC 生成**，每个 DTC 生成 t-09 活跃态 + t-08 恢复态各 1 条
-6. **Functional 寻址无论是否支持都必须生成全套用例**
+6. **电压类 DTC 必须用 Set Voltage[...]V 进行故障注入**，不得用其他方法替代（分类 4）
+7. **电压边界测试固定 4 条**，覆盖 9V/8.5V/16V/16.5V 四个边界点（分类 5）
+8. **Functional 寻址无论是否支持都必须生成全套用例**
+9. **非诊断操作步骤（Set Voltage、Delay、Stop SendMsg 等）不在 Expected Output 中列出**，**禁止使用 `--` 占位**
 
-### 分类 6: NRC Priority Test
+### 分类 8: NRC Priority Test
 #### 用例数量规则
 
 **固定 1 条 / 每个软件域 / 物理寻址**
@@ -359,16 +641,21 @@ Send DiagBy[<Addr>]Data[19 01]WithLen[1];
 
 #### 测试步骤模板
 
+**⚠️ test_procedure 中只写 Send 操作，步骤编号严格使用 `N. ` 格式，禁止使用 `StepN:` 格式。**
+
 ```
-1. 进入支持的会话（通常 Extended）
-2. Send DiagBy[Physical]Data[19 <UnsupportedSub> <Data>]WithLen[<InvalidLen>];
+1. Send DiagBy[Physical]Data[10 01];
+2. Send DiagBy[Physical]Data[10 03];
+3. Send DiagBy[Physical]Data[19 <UnsupportedSub> <Data>]WithLen[<InvalidLen>];
 ```
 
 构造方法：选择不支持的子功能（触发 NRC 0x12），同时设置非法长度（触发 NRC 0x13），ECU 应返回优先级最高的 NRC 0x13。
 
-#### Check 规则
+#### Check 规则（expected_output）
 
-- 第 2 步：`Check DiagData[7F 19 13]Within[50]ms;`（返回优先级最高的 NRC）
+- 第 1 步：`Check DiagData[50 01 <P2_H> <P2_L> <P2*_H> <P2*_L>]Within[50]ms;`
+- 第 2 步：`Check DiagData[50 03 <P2_H> <P2_L> <P2*_H> <P2*_L>]Within[50]ms;`
+- 第 3 步：`Check DiagData[7F 19 13]Within[50]ms;`（返回优先级最高的 NRC）
 
 #### 特殊规则
 
@@ -379,22 +666,26 @@ Send DiagBy[<Addr>]Data[19 01]WithLen[1];
 
 ## 分类总览
 
-0x19 固定 7 类生成能力（按顺序）：
+0x19 固定 9 类生成能力（按顺序）：
 
 | 分类 | 名称 | 说明 |
 |------|------|------|
 | 1 | Session Layer Test | 多 DTCStatusMask（FF/0x08/0x09）× 子功能 × 会话 |
 | 2 | SPRMIB Test | 验证 suppress bit 返回 NRC 0x12 |
 | 3 | DTC Read Function Test | 逐 DTC 生成，每个 DTC 2 条（t-09 + t-08） |
-| 4 | Incorrect Diagnostic Command Test | 固定 2 条（仅 SF_DL 异常） |
-| 5 | Functional Addressing Test | 无论 Functional Request 是否支持都生成全套 |
-| 6 | NRC Priority Test | 固定 1 条/域/Physical |
-| 7 | Boot Domain Test | Boot 域独立生成（若存在 0x19 数据） |
+| 4 | Supply Voltage Fault Injection Test | 电压 DTC 专项故障注入，每个电压 DTC 2 条（t-09 + t-08） |
+| 5 | Supply Voltage Boundary Test | 固定 4 条，验证电压边界（9V/8.5V/16V/16.5V）DTC 行为 |
+| 6 | Incorrect Diagnostic Command Test | 固定 2 条（仅 SF_DL 异常） |
+| 7 | Functional Addressing Test | 无论 Functional Request 是否支持都生成全套 |
+| 8 | NRC Priority Test | 固定 1 条/域/Physical |
+| 9 | Boot Domain Test | Boot 域独立生成（若存在 0x19 数据） |
 
 生成条数由以下因素共同决定：
 - 支持的子功能集合
 - 支持的会话集合
 - DTCStatusMask 组合
 - DTC 列表（Support=Y 的每个 DTC 各 2 条）
+- 电压 DTC 数量（每个电压 DTC 2 条）
+- 电压边界测试（固定 4 条）
 - 软件域（App / BootLoader）
 - Functional Request 状态
