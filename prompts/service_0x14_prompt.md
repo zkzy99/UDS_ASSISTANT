@@ -378,8 +378,8 @@ Send DiagBy[Physical]Data[14 FF FF FF]WithLen[3];
   - Programming: `Check DiagData[50 02 XX XX XX XX]Within[50]ms;`
 - RoutineControl（31 01 02 03）正响应：`Check DiagData[71 01 02 03 00]Within[50]ms;`
 - 只有 Seed 请求（27 XX）使用 `AndCheckResp[PositiveResponse]`，不需要单独写 Check
-- `Delay[...]ms;` 步骤不写 Check
-- Expected Output 编号与 Test Procedure 步骤编号一一对应
+- `Delay[...]ms;`、`Set Voltage[...]`、`Stop SendMsg[...]`、`Resume SendMsg[...]` 等非诊断操作步骤不写 Check，**不在 Expected Output 中列出**，**禁止使用 `--` 占位**
+- Expected Output 仅列出有实际 Check 的步骤，编号保持与 Test Procedure 对应步骤一致（如跳过步骤 2，则 Expected Output 中无 `2.` 条目）
 
 ---
 
@@ -416,10 +416,10 @@ Send DiagBy[Physical]Data[14 FF FF FF]WithLen[3];
 1. **Case ID 不可重复**，物理寻址 `Diag_0x14_Phy_001` 起递增，功能寻址 `Diag_0x14_Fun_001` 起递增
 2. **编号从 001 开始**，按 App Phy → App Fun → Boot Phy → Boot Fun 顺序编写
 3. **每个 Send 都要有对应 Check**，除以下豁免：
-   - `Delay[...]ms` 不写 Check
+   - `Delay[...]ms`、`Set Voltage[...]`、`Stop SendMsg[...]`、`Resume SendMsg[...]` 等非诊断操作步骤不写 Check，**不在 Expected Output 中列出**（**禁止使用 `--` 占位**）
    - 只有 `27 XX` Seed 请求使用 `AndCheckResp[PositiveResponse]`，其不单独写 Check
    - 会话进入步骤（10 01、10 03、10 02）和 RoutineControl（31 01 02 03）**必须**在 Expected Output 中写显式 Check
-4. **Expected Output 编号 = Test Procedure 步骤编号**，一一对应
+4. **Expected Output 仅列出有实际 Check 的步骤**，编号保持与 Test Procedure 对应步骤一致，**禁止使用 `--` 占位**
 5. **DTC 验证必须成对出现**：清除前验证存在 + 清除后验证已清除
 6. **故障制造方法从 DTC 表读取**，不同 DTC 的触发条件不同
 7. **不要跳过任何分类**：Secure Access 即使 Level0=Y 也必须生成；Boot 域即使不支持也必须生成 Session Layer 测试
