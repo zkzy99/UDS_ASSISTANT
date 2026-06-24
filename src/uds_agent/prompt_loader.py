@@ -82,16 +82,17 @@ def build_generation_user_message(
     elif sid_num == "31":
         parts.append(" + RID 列表")
 
-    parts.append(f"\n请根据以上参数和系统提示词中的规则，生成服务 {sid} 的完整测试用例。")
-
-    # 大用例量服务（0x22/0x2E）额外强调输出纪律
+    parts.append(f"\n## 重要：服务存在性检查（必须首先执行）")
+    parts.append(f"\n在生成测试用例之前，**必须**先在 Excel 原始文本中搜索服务 {sid} 的相关数据：")
+    parts.append(f"- 搜索 `Diagnostic Services` 表格中是否有 Service ID = `{sid}` 的条目")
     if sid_num in ("22", "2e"):
-        parts.append("""
-## 输出纪律提醒
-- 直接输出 pipe table 格式的测试用例，禁止任何分析、推理、参数提取段落
-- 每条用例必须完整，禁止用 ... 省略
-- 每个分类只输出一次表头，连续输出所有数据行，不要中断重写
-""")
+        parts.append(f"- 搜索是否存在 DID 表（DID 列表及其属性）")
+    elif sid_num in ("14", "19"):
+        parts.append(f"- 搜索是否存在 DTC 表")
+    elif sid_num == "31":
+        parts.append(f"- 搜索是否存在 RID 表")
+    parts.append(f"\n**如果服务 {sid} 在输入文件中不存在（无任何相关参数表或服务条目），则必须输出空服务（0 条用例），绝对禁止凭空编造测试数据。**")
+    parts.append(f"\n请根据以上参数和系统提示词中的规则，生成服务 {sid} 的完整测试用例。")
 
     parts.append(f"\n## Excel 原始文本\n\n{excel_text}")
 
