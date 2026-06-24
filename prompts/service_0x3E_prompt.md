@@ -12,15 +12,59 @@
 - **通常在 Default、Extended 和 Programming 会话下都支持**
 - **NRC 优先级链（服务级，0x3E 专用）**:
 
+> **关键规则**：以下为 0x3E 服务的**完整** NRC 优先级链模板。实际生成时必须从参数表 `Negative response codes` 字段读取精确的 NRC 列表和顺序，**参数表声明了哪些 NRC 就覆盖哪些**。
+
 | 优先级 | NRC | 触发条件 |
 |--------|-----|---------|
 | 1 | 0x13 | 长度错误（SF_DL≠2） |
-| 2 | 0x12 | 子功能不支持（非 0x00/0x80） |
+| 2 | 0x11 | 服务不支持（ECU 全局不支持 0x3E 服务时） |
+| 3 | 0x7F | 服务在当前会话不支持 |
+| 4 | 0x12 | 子功能不支持（非 0x00/0x80） |
+| 5 | 0x22 | 前提条件不满足 |
+
+**NRC 全覆盖要求**：参数表 `Negative response codes` 字段中列出的**每一个** NRC 都必须有至少一条专用测试用例。常用覆盖策略：
+- **0x13**：Incorrect Diagnostic Command（分类 7）覆盖
+- **0x11**：若参数表声明，Session Layer 覆盖（服务不支持）
+- **0x7F**：Session Layer 覆盖（当前会话不支持 0x3E 服务）
+- **0x12**：Sub-function Traversal（分类 6）+ NRC Priority（分类 8）覆盖
+- **0x22**：NRC Priority Test 覆盖（前提条件不满足）
 
 ### 正响应格式
 
 - `7E 00`（仅确认，无额外 payload）
 - SPRMIB 模式（3E 80）：无响应
+
+---
+
+## 预期输出格式规则（强制）
+
+> **关键规则**：`expected_output` 字段必须使用完整的 `Check` 函数格式，**绝对禁止**使用裸 hex 字节简化格式。
+
+### 两个字段的职责划分
+
+| 字段 | 写什么 | 不写什么 |
+|------|--------|---------|
+| `test_procedure` | Send / Delay / Set / Change 等**操作** | 不写 Check（Check 放到 expected_output） |
+| `expected_output` | Check DiagData / Check No_Response 等**检查** | 不写 Send / Delay / Set |
+
+### expected_output 格式规范
+
+- 每条 Check 必须使用完整函数格式：`N. Check DiagData[<hex_bytes>]Within[<time>]ms;`
+- 无响应检查使用：`N. Check No_Response Within[<time>]ms;`
+- 序号 `N` 与 `test_procedure` 中对应 Send 步骤的编号一致
+- Delay、Set Voltage、已带 `AndCheckResp` 的步骤不在 expected_output 中出现
+- 多个 Check 用 `<br>` 分隔
+
+**正确格式示例：**
+```
+2. Check DiagData[50 03 00 32 01 F4]Within[50]ms;<br>5. Check DiagData[67 06]Within[50]ms;<br>8. Check DiagData[7E 00]Within[50]ms;<br>11. Check DiagData[62 F1 86 03]Within[50]ms;
+```
+
+**错误格式示例（禁止）：**
+- `2. 50 03 00 32 01 F4<br>5. 67 06` ❌ — 缺少 `Check DiagData[...]Within[50]ms;` 包装
+- `Step2: 7E 00` ❌ — 禁止 `StepX:` 前缀 + 缺少 Check 包装
+- `2.No_Response` ❌ — 必须使用完整格式 `2. Check No_Response Within[1000]ms;`
+- `2.Check DiagData[50 03...]` ❌ — 序号与内容之间必须有空格（如 `2. Check...`）
 
 ---
 
@@ -358,7 +402,8 @@ Send DiagBy[Physical]Data[3E 00]WithLen[1];
 
 #### 用例数量规则
 
-**固定 2 条**
+- **【强制】NRC 全量覆盖**：优先级链必须包含参数表 `Negative response codes` 字段声明的**所有 NRC**。每个已声明的 NRC 必须至少有一条专用用例覆盖。
+- **固定 2 条** + 参数表额外声明的 NRC 覆盖用例
 
 | 序号 | 场景 | 描述 |
 |------|------|------|
@@ -376,19 +421,35 @@ Send DiagBy[Physical]Data[3E 00]WithLen[1];
 ```
 1. Send DiagBy[Physical]Data[3E 01]WithLen[1];
 ```
+预期：`Check DiagData[7F 3E 13]Within[50]ms;`
 
 **用例 2（NRC 12）：**
 ```
 1. Send DiagBy[Physical]Data[3E 0A];
 ```
+预期：`Check DiagData[7F 3E 12]Within[50]ms;`
+
+**NRC 0x11 专用覆盖（若参数表声明）：**
+```
+1. 进入不支持 0x3E 服务的会话，发送 3E 00
+```
+预期：`Check DiagData[7F 3E 11]Within[50]ms;`
+
+**NRC 0x7F 专用覆盖（若参数表声明）：**
+```
+1. 进入不支持 0x3E 服务的当前会话，发送 3E 00
+```
+预期：`Check DiagData[7F 3E 7F]Within[50]ms;`
+
+**NRC 0x22 专用覆盖（若参数表声明）：**
+```
+1. 在前提条件不满足时发送 3E 00
+```
+预期：`Check DiagData[7F 3E 22]Within[50]ms;`
 
 #### Check 规则
 
-**用例 1：**
-- `Check DiagData[7F 3E 13]Within[50]ms;`
-
-**用例 2：**
-- `Check DiagData[7F 3E 12]Within[50]ms;`
+- 每条用例验证一对相邻 NRC 的优先级关系或独立 NRC 触发
 
 ---
 
@@ -457,12 +518,15 @@ Boot 域按以下顺序生成，每个子分类与 APP 域结构相同：
 
 ## 生成注意事项
 
-1. **0x3E 通常在 Default、Extended 和 Programming 会话下都支持**
+1. **0x3E 通常在 Default、Extended 和 Programming 会话下都支持**，具体支持哪些会话必须从参数表 `Diagnostic Services` 中 0x3E 条目的 `Supported Session` 字段精确读取
 2. **S3 时间从参数表读取**，边界值按 S3±100ms 计算（如 S3=5000ms → 有效 4900ms，无效 5100ms）
-3. **F1 86 DID 用于 APP 域读取当前会话号**：01=Default, 03=Extended
-4. **Boot 域使用 `31 01 FF 01` 验证会话状态**：正响应=71 01 FF 01 00，负响应=7F 31 31
-5. **Boot 域安全等级为 LevelFBL（27 11/27 12）**，不同于 APP 域的 L1（27 01/27 02）
-6. **SPRMIB (3E 80) 无响应但仍刷新 S3**
+3. **【强制】DID F1 86（Active Diagnostic Session）用于 APP 域读取当前会话号**，该 DID **必须存在于参数表 DID 表中**才可使用。若 DID 表中不存在 F1 86，则 APP 域 S3 Timer、ECU Reset、Secure Access 等依赖该 DID 的测试步骤**必须跳过**，改用其他可从参数表获取的方式验证会话状态（如发送 0x22 读取参数表中已存在的某个代表性 DID，或仅依赖 0x3E 自身响应判断）
+4. **【强制】Boot 域使用 `31 01 FF 01`（RID 0xFF01）验证会话状态**，该 RID **必须存在于参数表 Routine Control 表中**才可使用。若 Routine Control 表中不存在 RID 0xFF01，则 Boot 域 S3 Timer、ECU Reset、Secure Access 等依赖该 RID 的测试步骤**必须跳过**，改用其他可从参数表获取的方式验证
+5. **【强制】绝对禁止使用参数表中未声明的 DID/RID 发送请求并设置预期响应**。所有跨服务引用的标识符（如 0x3E 用例中使用的 0x22 读取 DID、0x31 调用 RID）必须从对应参数表（DID 表、Routine Control 表）中验证存在性
+6. **Boot 域安全等级为 LevelFBL（27 11/27 12）**，不同于 APP 域的 L1（27 01/27 02），安全等级必须从参数表 `0x27 Security Access` 表读取确认
+7. **SPRMIB (3E 80) 无响应但仍刷新 S3**
+8. **若用于验证的 DID/RID 在参数表中不存在**，相关分类直接输出 `> 无符合条件的用例（参数表中无 F1 86 DID / FF 01 RID）。` 并跳过该分类
+9. **【强制】NRC 全量覆盖自检**：生成完所有用例后，必须逐一核对参数表 `Negative response codes` 字段声明的每一个 NRC（0x11、0x7F、0x13、0x12、0x22 等）是否都有至少一条专用测试用例。漏掉任何一个已声明 NRC 均为不合格输出。
 
 ---
 
