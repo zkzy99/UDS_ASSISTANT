@@ -28,15 +28,27 @@
 - **关键特性**: 不存在 NRC 0x12（因为没有子功能概念）；NRC 0x31 用于不支持的 DID
 - **NRC 优先级链（服务级，0x22 专用）**:
 
+> **关键规则**：以下为 0x22 服务的**完整** NRC 优先级链模板。实际生成时必须从参数表 `Negative response codes` 字段读取精确的 NRC 列表和顺序，**参数表声明了哪些 NRC 就覆盖哪些**。下表列出 0x22 所有可能的 NRC 及触发条件，生成时按参数表实际声明的 NRC 筛选使用。
+
 | 优先级 | NRC | 触发条件 |
 |--------|-----|---------|
 | 1 | 0x13 | 长度错误（SF_DL≠3 或非模2整除） |
-| 2 | 0x31 | DID 不支持 |
-| 3 | 0x31 | 循环后无任何 DID 可读 |
-| 4 | 0x33 | 安全访问未解锁 |
-| 5 | 0x22 | DID 前提条件不满足 |
-| 6 | 0x14 | 响应总长度超限 |
-| 7 | 0xXX | 厂商/供应商自定义 |
+| 2 | 0x11 | 服务不支持（ECU 全局不支持 0x22 服务时） |
+| 3 | 0x7F | 服务在当前会话不支持 |
+| 4 | 0x31 | DID 不支持 / 数据记录无效 |
+| 5 | 0x33 | 安全访问未解锁 |
+| 6 | 0x22 | DID 前提条件不满足 |
+| 7 | 0x14 | 响应总长度超限（0x22 专有） |
+| 8 | 0xXX | 厂商/供应商自定义 |
+
+**NRC 全覆盖要求**：参数表 `Negative response codes` 字段中列出的**每一个** NRC 都必须有至少一条专用测试用例。常用覆盖策略：
+- **0x13**：Incorrect Diagnostic Command（SF_DL≠3）覆盖
+- **0x11**：若参数表声明，Session Layer 覆盖（当前会话不支持 0x22 服务）
+- **0x7F**：若参数表声明，Session Layer 覆盖（服务在当前会话不支持）
+- **0x31**：DID Range Test 覆盖（不支持的 DID）、Session Layer 覆盖
+- **0x33**：Secure Access Test 覆盖（安全访问未解锁时读取需安全等级的 DID）
+- **0x22**：NRC Priority Test 覆盖（DID 前提条件不满足）
+- **0x14**：NRC Priority Test 覆盖（读取超长 DID 组合导致响应超限）
 
 ### 正响应格式
 
@@ -395,8 +407,61 @@ APP 域在 Default 和 Extended 会话下分别生成；Boot 域仅在 Default S
 ### 分类 6: NRC Priority Test
 #### 用例数量规则
 
+- **【强制】NRC 全量覆盖**：优先级链必须包含参数表 `Negative response codes` 字段声明的**所有 NRC**。每个已声明的 NRC 必须至少有一条专用用例覆盖。
 - **APP 域**：每个支持 0x22 的会话各 1 条 → 通常 Default + Extended = **2 条**
 - **Boot 域（简化）**：仅 Default Session 1 条 → **1 条**
+
+#### 用例命名规则
+
+- APP：`<SessionName> Session NRC priority test for service 0x22`
+- Boot：`Boot <SessionName> Session NRC priority test for service 0x22`
+
+#### 测试步骤模板
+
+**⚠️ test_procedure 中只写 Send/Delay/Set 操作，绝对不要写 Check 语句！**
+
+在对应会话下，发送长度错误的 0x22 请求（如 SF_DL < 3），验证 ECU 优先返回 NRC 0x13 而非其他 NRC。
+
+**Default Session**
+```
+1. Send DiagBy[Physical]Data[10 01];
+2. Send DiagBy[Physical]Data[22 F1]WithLen[2];
+```
+
+**Extended Session**
+```
+1. Send DiagBy[Physical]Data[10 01];
+2. Send DiagBy[Physical]Data[10 03];
+3. Send DiagBy[Physical]Data[22 F1]WithLen[2];
+```
+
+**NRC 0x11 专用覆盖（若参数表声明）：**
+```
+1. Send DiagBy[Physical]Data[10 01];
+2. Send DiagBy[Physical]Data[22 <DID_H> <DID_L>];
+```
+预期：`Check DiagData[7F 22 11]Within[50]ms;`（服务在当前会话不支持）
+
+**NRC 0x7F 专用覆盖（若参数表声明）：**
+```
+1. Send DiagBy[Physical]Data[10 01];
+2. Send DiagBy[Physical]Data[22 <DID_H> <DID_L>];
+```
+预期：`Check DiagData[7F 22 7F]Within[50]ms;`（服务在当前会话不支持）
+
+**NRC 0x31 专用覆盖（若参数表声明）：**
+已在 DID Range Test 中覆盖（不支持的 DID 返回 0x31）
+
+**NRC 0x33 专用覆盖（若参数表声明）：**
+已在 Secure Access Test 中覆盖（需安全等级的 DID 在未解锁时读取）
+
+**NRC 0x14 专用覆盖（若参数表声明，0x22 专有）：**
+1. 请求读取一个超长 DID 或多个 DID 组合，导致正响应总长度超出 ECU 限制
+2. 预期：`Check DiagData[7F 22 14]Within[50]ms;`
+
+**NRC 0x22 专用覆盖（若参数表声明）：**
+1. 在 DID 前提条件不满足时（如车速=0 而 DID 要求车速>0）发送 0x22 请求
+2. 预期：`Check DiagData[7F 22 22]Within[50]ms;`
 
 #### 用例命名规则
 
@@ -438,6 +503,7 @@ APP 域在 Default 和 Extended 会话下分别生成；Boot 域仅在 Default S
 1. NRC 0x13（消息长度错误）的优先级高于 NRC 0x31（DID 不支持）等
 2. 此用例验证 ECU 正确的 NRC 优先级处理
 3. APP 域在各支持会话下生成；Boot 域仅在 Default Session 下生成
+4. **【强制】NRC 全量覆盖自检**：生成完所有用例后，必须逐一核对参数表 `Negative response codes` 字段声明的每一个 NRC（0x11、0x7F、0x13、0x31、0x14、0x22、0x33 等）是否都有至少一条专用测试用例。漏掉任何一个已声明 NRC 均为不合格输出。
 
 ---
 
