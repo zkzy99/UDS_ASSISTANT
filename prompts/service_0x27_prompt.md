@@ -11,7 +11,22 @@
 - **关键特性**: 复杂的安全机制，包含错误计数器、延时计时器、FAA flag
 - **通常不支持功能寻址**
 - **NRC 优先级链**：共享 Figure 6，追加 0x35 > 0x36 > 0x37（InvalidKey > ExceededAttempts > TimeDelay）
-- **完整链**: 0x13 > 0x12 > 0x7E > 0x33 > 0x24 > 0x35 > 0x36 > 0x37
+- **完整链（含所有可能的 NRC）**: 0x13 > 0x11 > 0x12 > 0x7E > 0x7F > 0x33 > 0x22 > 0x31 > 0x24 > 0x35 > 0x36 > 0x37
+- **实际生成时**必须从参数表 `Negative response codes` 字段精确读取 NRC 列表和顺序，参数表声明了哪些 NRC 就覆盖哪些
+
+**NRC 全覆盖要求**：参数表 `Negative response codes` 字段中列出的**每一个** NRC 都必须有至少一条专用测试用例。常用覆盖策略：
+- **0x13**：Incorrect Diagnostic Command（SF_DL≠2）覆盖
+- **0x11**：若参数表声明，Session Layer 覆盖（当前会话不支持 0x27 服务）
+- **0x12**：Session Layer 负向（全局不支持子功能）、SPRMIB Test（0x83/0x84→0x12）覆盖
+- **0x7E**：Session Layer 负向（支持的子功能在当前会话不支持）覆盖
+- **0x7F**：若参数表声明，Session Layer 覆盖（服务在当前会话不支持）
+- **0x22**：若参数表声明，Session Layer 覆盖（条件不满足）
+- **0x31**：若参数表声明，Session Layer 覆盖（请求超出范围）
+- **0x33**：Secure Access Process Test 覆盖（安全访问未解锁）
+- **0x24**：Secure Access Process Test 覆盖（序列错误：key→seed）
+- **0x35**：Security Mechanism Test 路径A覆盖（错误密钥）
+- **0x36**：Security Mechanism Test 路径A/B覆盖（超过最大尝试次数）
+- **0x37**：Security Mechanism Test 覆盖（锁定延时未到期）
 
 ### 正响应格式
 
@@ -435,7 +450,8 @@ Send DiagBy[Physical]Data[27]WithLen[1];
 ### 分类 8: NRC Priority Test (APP)
 #### 用例数量规则
 
-**固定 1 条**
+- **【强制】NRC 全量覆盖**：优先级链必须包含参数表 `Negative response codes` 字段声明的**所有 NRC**。每个已声明的 NRC 必须至少有一条专用用例覆盖。
+- **固定 1 条**（NRC 优先级验证）
 
 #### 用例命名规则
 
@@ -451,6 +467,25 @@ Send DiagBy[Physical]Data[27]WithLen[1];
 #### Check 规则
 
 - `Check DiagData[7F 27 13]Within[50]ms;`（NRC 0x13 优先于 0x12）
+
+#### NRC 全覆盖自检清单（0x27 专用）
+
+| NRC | 覆盖方式 |
+|-----|---------|
+| 0x13 | Incorrect Command（分类 7）+ NRC Priority（分类 8）|
+| 0x11 | Session Layer（分类 1）— 服务在当前会话不支持 |
+| 0x12 | Session Layer + SPRMIB Test（分类 6）+ NRC Priority |
+| 0x7E | Session Layer — 子功能在当前会话不支持 |
+| 0x7F | Session Layer — 服务在当前会话不支持 |
+| 0x22 | Session Layer — 条件不满足 |
+| 0x31 | Session Layer — 请求超出范围 |
+| 0x33 | Secure Access Process（分类 2）|
+| 0x24 | Secure Access Process（分类 2）— 序列错误 |
+| 0x35 | Security Mechanism（分类 3）路径A — 错误密钥 |
+| 0x36 | Security Mechanism（分类 3）路径A/B — 超过最大尝试次数 |
+| 0x37 | Security Mechanism（分类 3）— 锁定延时未到期 |
+
+> **生成前必须从参数表 `Negative response codes` 字段精确提取 NRC 列表，确保表中每一个 NRC 都在上述覆盖清单中有对应的测试用例。**
 
 ---
 
