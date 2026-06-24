@@ -10,12 +10,26 @@
 - **关键特性**: 先回正响应，再执行复位；复位期间 ECU 不响应其它请求
 - **NRC 优先级链（服务级，0x11 专用）**:
 
+> **关键规则**：以下为 0x11 服务的**完整** NRC 优先级链模板。实际生成时必须从参数表 `Negative response codes` 字段读取精确的 NRC 列表和顺序，**参数表声明了哪些 NRC 就覆盖哪些**。下表列出 0x11 所有可能的 NRC 及触发条件，生成时按参数表实际声明的 NRC 筛选使用。
+
 | 优先级 | NRC | 触发条件 |
 |--------|-----|---------|
 | 1 | 0x13 | 长度错误（SF_DL≠2） |
-| 2 | 0x12 | 子功能不支持 |
-| 3 | 0x7E | 子功能在当前会话不支持 |
-| 4 | 0x22 | 前提条件不满足 |
+| 2 | 0x11 | 服务不支持（ECU 全局不支持 0x11 服务时） |
+| 3 | 0x12 | 子功能不支持 |
+| 4 | 0x7E | 子功能在当前会话不支持 |
+| 5 | 0x7F | 服务在当前会话不支持 |
+| 6 | 0x22 | 前提条件不满足（如车速条件） |
+| 7 | 0x33 | 安全访问未解锁 |
+
+**NRC 全覆盖要求**：参数表 `Negative response codes` 字段中列出的**每一个** NRC 都必须有至少一条专用测试用例。常用覆盖策略：
+- **0x13**：Incorrect Diagnostic Command（SF_DL≠2）覆盖
+- **0x11**：若参数表声明，Session Layer 覆盖（服务全局不支持）
+- **0x12**：Session Layer 负向（全局不支持子功能）、Sub-function Traversal 覆盖
+- **0x7E**：Session Layer 负向（支持的子功能在当前会话不支持）
+- **0x7F**：Session Layer 负向（当前会话不支持 0x11 服务）— 0x11 客户口径使用 0x7F
+- **0x22**：前置条件测试覆盖（车速等条件不满足时）
+- **0x33**：Secure Access Test 覆盖（未解锁时请求需安全等级的 reset）
 
 ### 正响应格式
 
@@ -457,7 +471,9 @@
 
 **B. NRC 优先级验证（NRC 优先级链中相邻 NRC 对的数量 / 物理寻址 + 功能寻址）：**
 
-每个相邻 NRC 对生成 1 条用例。例如链 `13>12>7E>22` 有 3 对，生成 3 条：
+> **【强制】NRC 全量覆盖**：优先级链必须包含参数表 `Negative response codes` 字段声明的**所有 NRC**。每个相邻 NRC 对生成 1 条用例。**此外，每个已声明的 NRC 必须至少有一条专用用例覆盖**（可在本分类或 Session Layer / Secure Access 等分类中覆盖）。
+
+每个相邻 NRC 对生成 1 条用例。例如链 `13>11>12>7E>7F>22>33`（完整链，实际按参数表筛选）生成 N-1 条：
 - 验证 `13(min Size) > 12`：SF_DL 不满足最小长度 + 不支持子功能 → 返回 NRC 0x13
 - 验证 `12 > 13(no min size)`：SF_DL > 2 但子功能不支持 → 返回 NRC 0x12
 - 验证 `7E > 22`：在当前会话不支持该子功能时请求 → 返回 NRC 0x7E
@@ -497,7 +513,7 @@ Send Msg[<ReqCANID>]Data[02 11 <RepSub>]WithDLC[7];
 Send Msg[<ReqCANID>]Data[02 11 <RepSub>]WithDLC[9];
 ```
 
-**C. NRC 优先级验证（以链 `13>12>7E>22` 为例）**
+**C. NRC 优先级验证（以完整链 `13>11>12>7E>7F>22>33` 为例，实际按参数表筛选）**
 
 **用例 1：验证 `13(min Size) > 12`**
 1. 进入 Default Session
@@ -515,6 +531,18 @@ Send Msg[<ReqCANID>]Data[02 11 <RepSub>]WithDLC[9];
 1. 进入不支持该子功能的会话
 2. `Send DiagBy[<Addr>]Data[11 <SupportedSubButNotInSession>];`
 3. 预期：`Check DiagData[7F 11 7E]Within[50]ms;`
+
+**NRC 0x11 专用覆盖（若参数表声明）：**
+1. 进入不支持 0x11 服务的会话，发送 `11 <Sub>`
+2. 预期：`Check DiagData[7F 11 11]Within[50]ms;`
+
+**NRC 0x7F 专用覆盖（若参数表声明）：**
+1. 进入不支持 0x11 服务的当前会话，发送 `11 <SupportedSub>`
+2. 预期：`Check DiagData[7F 11 7F]Within[50]ms;`
+
+**NRC 0x33 专用覆盖（若参数表声明）：**
+1. 进入需要安全访问的会话，在不解锁的情况下发送 `11 <Sub>`
+2. 预期：`Check DiagData[7F 11 33]Within[50]ms;`
 
 **D. 前置条件验证（车速示例）**
 
@@ -539,6 +567,7 @@ Send Msg[<ReqCANID>]Data[02 11 <RepSub>]WithDLC[9];
 4. NRC 优先级链中有 N 对相邻 NRC，就生成 N 条用例
 5. **物理寻址和功能寻址均生成 NRC Priority 用例**；功能寻址下 NRC 0x12 预期改为 `No_Response`
 6. 若项目有车速等前置条件限制，额外生成前置条件 NRC 0x22 验证用例
+7. **【强制】NRC 全量覆盖自检**：生成完所有用例后，必须逐一核对参数表 `Negative response codes` 字段声明的每一个 NRC 是否都有至少一条专用测试用例。漏掉任何一个已声明 NRC 均为不合格输出。
 
 ---
 
